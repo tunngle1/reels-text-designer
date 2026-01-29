@@ -40,34 +40,59 @@ export const fetchGoogleFonts = async (limit?: number): Promise<GoogleFont[]> =>
   }
 };
 
-export const loadGoogleFont = (fontFamily: string): void => {
+export const loadGoogleFont = async (fontFamily: string): Promise<void> => {
   const existingLink = document.querySelector(`link[data-font="${fontFamily}"]`);
-  if (existingLink) return;
-  if (loadedFamilies.has(fontFamily)) return;
+  if (existingLink) {
+    // Шрифт уже загружен, ждём готовности
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+    return;
+  }
+  if (loadedFamilies.has(fontFamily)) {
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+    return;
+  }
 
   const link = document.createElement('link');
   const familyParam = `${encodeURIComponent(fontFamily).replace(/%20/g, '+')}:wght@100;200;300;400;500;600;700;800;900`;
   link.href = `https://fonts.googleapis.com/css2?family=${familyParam}&display=swap`;
   link.rel = 'stylesheet';
   link.setAttribute('data-font', fontFamily);
+  
+  const loadPromise = new Promise<void>((resolve) => {
+    link.onload = () => resolve();
+    link.onerror = () => resolve();
+  });
+  
   document.head.appendChild(link);
   loadedFamilies.add(fontFamily);
+  
+  await loadPromise;
+  
+  // Ждём когда браузер распарсит шрифт
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
+  }
 };
 
 export const loadMultipleGoogleFonts = (fontFamilies: string[]): void => {
   fontFamilies.forEach(loadGoogleFont);
 };
 
-export const loadGoogleFontsBatch = (fontFamilies: string[], perRequest: number = 20): void => {
+export const loadGoogleFontsBatch = async (fontFamilies: string[], perRequest: number = 20): Promise<void> => {
   const unique = Array.from(new Set(fontFamilies)).filter(f => f && !loadedFamilies.has(f));
   if (unique.length === 0) return;
+
+  const promises: Promise<void>[] = [];
 
   for (let i = 0; i < unique.length; i += perRequest) {
     const chunk = unique.slice(i, i + perRequest);
     const familyParams = chunk
       .map(f => {
-        // Для превью подгружаем только базовый вес, иначе стартовая загрузка становится слишком тяжёлой
-        const family = `${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400`;
+        const family = `${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400;600`;
         return `family=${family}`;
       })
       .join('&');
@@ -76,8 +101,22 @@ export const loadGoogleFontsBatch = (fontFamilies: string[], perRequest: number 
     link.href = `https://fonts.googleapis.com/css2?${familyParams}&display=swap`;
     link.rel = 'stylesheet';
     link.setAttribute('data-font-batch', chunk.join('|'));
+    
+    const loadPromise = new Promise<void>((resolve) => {
+      link.onload = () => resolve();
+      link.onerror = () => resolve();
+    });
+    
     document.head.appendChild(link);
+    promises.push(loadPromise);
 
     chunk.forEach(f => loadedFamilies.add(f));
+  }
+
+  // Ждём загрузки CSS
+  await Promise.all(promises);
+  // Ждём когда браузер распарсит шрифты
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
   }
 };

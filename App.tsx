@@ -2,9 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Font, Tab } from './types';
 import { INITIAL_FONTS, STORAGE_KEYS } from './constants';
 import { fetchGoogleFonts, loadGoogleFont, loadGoogleFontsBatch, GoogleFont } from './googleFontsApi';
-import { UNICODE_STYLES, applyStyle, UnicodeStyleDef } from './unicodeStyles';
 
-// Компонент заголовка
+// Компонент заголовка с полем ввода
 const Header: React.FC<{ text: string; onTextChange: (t: string) => void }> = ({ text, onTextChange }) => (
   <header className="p-4 bg-gradient-to-b from-purple-900/50 to-transparent">
     <h1 className="text-2xl font-bold text-white mb-4">Создать</h1>
@@ -16,19 +15,6 @@ const Header: React.FC<{ text: string; onTextChange: (t: string) => void }> = ({
       className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-white/50 text-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
     />
   </header>
-);
-
-// Компонент вкладки
-const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
-  <button
-    onClick={onClick}
-    className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
-      active ? 'text-purple-400' : 'text-gray-500'
-    }`}
-  >
-    {icon}
-    <span className="text-xs">{label}</span>
-  </button>
 );
 
 // Иконки для вкладок
@@ -50,36 +36,55 @@ const FavoritesIcon = () => (
   </svg>
 );
 
-// Карточка Unicode-стиля (для раздела Каллиграфия)
-const StyleCard: React.FC<{
-  style: UnicodeStyleDef;
+// Компонент вкладки
+const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
+  <button
+    onClick={onClick}
+    className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
+      active ? 'text-purple-400' : 'text-gray-500'
+    }`}
+  >
+    {icon}
+    <span className="text-xs">{label}</span>
+  </button>
+);
+
+// Карточка шрифта (универсальная для обоих разделов)
+const FontCard: React.FC<{
+  font: Font;
   text: string;
   isSelected: boolean;
   isFavorite: boolean;
   onSelect: () => void;
   onToggleFavorite: () => void;
   onCopy: () => void;
-}> = ({ style, text, isSelected, isFavorite, onSelect, onToggleFavorite, onCopy }) => {
-  const styledText = applyStyle(text || 'Пример текста', style.id);
-  
+  accentColor?: string;
+}> = ({ font, text, isSelected, isFavorite, onSelect, onToggleFavorite, onCopy, accentColor = 'purple' }) => {
+  const gradientFrom = accentColor === 'purple' ? 'from-purple-600/30' : 'from-blue-600/30';
+  const gradientTo = accentColor === 'purple' ? 'to-pink-600/30' : 'to-cyan-600/30';
+  const borderColor = accentColor === 'purple' ? 'border-purple-500' : 'border-blue-500';
+  const buttonBg = accentColor === 'purple' ? 'bg-purple-600 hover:bg-purple-500' : 'bg-blue-600 hover:bg-blue-500';
+
   return (
     <div
       onClick={onSelect}
       className={`relative p-4 rounded-2xl cursor-pointer transition-all ${
         isSelected
-          ? 'bg-gradient-to-br from-purple-600/30 to-pink-600/30 border-2 border-purple-500'
+          ? `bg-gradient-to-br ${gradientFrom} ${gradientTo} border-2 ${borderColor}`
           : 'bg-white/5 border border-white/10 hover:bg-white/10'
       }`}
     >
-      {/* Название стиля */}
-      <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">
-        {style.nameRu}
-        {style.supportsCyrillic && <span className="ml-1 text-green-400">•</span>}
+      {/* Название шрифта */}
+      <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-2 truncate pr-8">
+        {font.name}
       </div>
       
       {/* Превью текста */}
-      <div className="text-white text-lg leading-relaxed min-h-[48px] break-words">
-        {styledText}
+      <div 
+        className="text-white text-xl leading-relaxed min-h-[56px] break-words"
+        style={{ fontFamily: font.family }}
+      >
+        {text || font.name}
       </div>
       
       {/* Кнопка избранного */}
@@ -104,8 +109,11 @@ const StyleCard: React.FC<{
             e.stopPropagation();
             onCopy();
           }}
-          className="absolute bottom-3 right-3 px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded-lg text-xs text-white font-medium transition-colors"
+          className={`absolute bottom-3 right-3 px-3 py-1.5 ${buttonBg} rounded-lg text-xs text-white font-medium transition-colors flex items-center gap-1`}
         >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+          </svg>
           Копировать
         </button>
       )}
@@ -113,84 +121,28 @@ const StyleCard: React.FC<{
   );
 };
 
-// Карточка шрифта (для раздела Шрифты)
-const FontCard: React.FC<{
-  font: Font;
-  text: string;
-  isSelected: boolean;
-  isFavorite: boolean;
-  onSelect: () => void;
-  onToggleFavorite: () => void;
-}> = ({ font, text, isSelected, isFavorite, onSelect, onToggleFavorite }) => (
-  <div
-    onClick={onSelect}
-    className={`relative p-4 rounded-2xl cursor-pointer transition-all ${
-      isSelected
-        ? 'bg-gradient-to-br from-blue-600/30 to-cyan-600/30 border-2 border-blue-500'
-        : 'bg-white/5 border border-white/10 hover:bg-white/10'
-    }`}
-  >
-    {/* Название шрифта */}
-    <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-2 truncate">
-      {font.name}
-    </div>
-    
-    {/* Превью текста */}
-    <div 
-      className="text-white text-lg leading-relaxed min-h-[48px] break-words"
-      style={{ fontFamily: font.family }}
-    >
-      {text || font.name}
-    </div>
-    
-    {/* Кнопка избранного */}
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggleFavorite();
-      }}
-      className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${
-        isFavorite ? 'text-pink-500' : 'text-gray-500 hover:text-gray-300'
-      }`}
-    >
-      <svg className="w-5 h-5" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-      </svg>
-    </button>
-  </div>
-);
-
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('calligraphy');
   const [text, setText] = useState('владик пуся');
-  const [selectedStyleId, setSelectedStyleId] = useState<string>('normal');
-  const [selectedFontId, setSelectedFontId] = useState('montserrat');
-  const [favoriteStyles, setFavoriteStyles] = useState<string[]>([]);
-  const [favoriteFonts, setFavoriteFonts] = useState<string[]>([]);
+  const [selectedFontId, setSelectedFontId] = useState('');
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [googleFonts, setGoogleFonts] = useState<Font[]>([]);
   const [isLoadingFonts, setIsLoadingFonts] = useState(false);
-  const [visibleStylesCount, setVisibleStylesCount] = useState(20);
-  const [visibleFontsCount, setVisibleFontsCount] = useState(40);
+  const [visibleCount, setVisibleCount] = useState(40);
   const [onlyCyrillic, setOnlyCyrillic] = useState(true);
-  const [showCyrillicStylesOnly, setShowCyrillicStylesOnly] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isCopying, setIsCopying] = useState(false);
 
-  // Загрузка избранного из localStorage
+  // Загрузка данных
   useEffect(() => {
-    const savedFavoriteStyles = localStorage.getItem('reels_favorite_styles');
-    if (savedFavoriteStyles) setFavoriteStyles(JSON.parse(savedFavoriteStyles));
-    
-    const savedFavoriteFonts = localStorage.getItem(STORAGE_KEYS.FAVORITES);
-    if (savedFavoriteFonts) setFavoriteFonts(JSON.parse(savedFavoriteFonts));
+    const savedFavorites = localStorage.getItem(STORAGE_KEYS.FAVORITES);
+    if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
 
-    // Telegram WebApp
     const tg = (window as any).Telegram;
     if (tg?.WebApp) {
       tg.WebApp.ready();
       tg.WebApp.expand();
     }
 
-    // Загрузка Google Fonts
     const loadFonts = async () => {
       setIsLoadingFonts(true);
       try {
@@ -203,8 +155,12 @@ const App: React.FC = () => {
           subsets: gf.subsets,
           category: gf.category
         }));
+        // Отладка: сколько шрифтов с кириллицей
+        const cyrillicFonts = convertedFonts.filter(f => f.subsets?.includes('cyrillic') || f.subsets?.includes('cyrillic-ext'));
+        console.log(`Всего шрифтов: ${convertedFonts.length}, с кириллицей: ${cyrillicFonts.length}`);
         setGoogleFonts(convertedFonts);
-        fonts.slice(0, 10).forEach(f => loadGoogleFont(f.family));
+        // Предзагружаем первые шрифты
+        fonts.slice(0, 20).forEach(f => loadGoogleFont(f.family));
       } catch (error) {
         console.error('Failed to load Google Fonts:', error);
       } finally {
@@ -216,136 +172,176 @@ const App: React.FC = () => {
 
   // Сохранение избранного
   useEffect(() => {
-    localStorage.setItem('reels_favorite_styles', JSON.stringify(favoriteStyles));
-  }, [favoriteStyles]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favoriteFonts));
-  }, [favoriteFonts]);
+    localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favorites));
+  }, [favorites]);
 
   const allFonts = [...INITIAL_FONTS, ...googleFonts];
-  const selectedFont = allFonts.find(f => f.id === selectedFontId) || INITIAL_FONTS[0];
 
-  // Фильтрация шрифтов по кириллице
-  const filteredFonts = onlyCyrillic
-    ? allFonts.filter(f => {
-        if (f.source !== 'google') return true;
-        const subsets = f.subsets || [];
-        return subsets.includes('cyrillic') || subsets.includes('cyrillic-ext');
-      })
-    : allFonts;
+  // Каллиграфические шрифты (handwriting category)
+  const calligraphyFonts = allFonts.filter(f => {
+    const isHandwriting = f.category === 'handwriting';
+    if (!onlyCyrillic) return isHandwriting;
+    if (f.source !== 'google') return isHandwriting;
+    const subsets = f.subsets || [];
+    return isHandwriting && (subsets.includes('cyrillic') || subsets.includes('cyrillic-ext'));
+  });
 
-  // Фильтрация стилей
-  const filteredStyles = showCyrillicStylesOnly
-    ? UNICODE_STYLES.filter(s => s.supportsCyrillic)
-    : UNICODE_STYLES;
+  // Остальные шрифты
+  const regularFonts = allFonts.filter(f => {
+    const isNotHandwriting = f.category !== 'handwriting';
+    if (!onlyCyrillic) return isNotHandwriting;
+    if (f.source !== 'google') return isNotHandwriting;
+    const subsets = f.subsets || [];
+    return isNotHandwriting && (subsets.includes('cyrillic') || subsets.includes('cyrillic-ext'));
+  });
 
-  const displayedStyles = filteredStyles.slice(0, visibleStylesCount);
-  const displayedFonts = filteredFonts.slice(0, visibleFontsCount);
+  // Выбор списка в зависимости от вкладки
+  const currentFonts = activeTab === 'calligraphy' ? calligraphyFonts 
+    : activeTab === 'fonts' ? regularFonts 
+    : allFonts.filter(f => favorites.includes(f.id));
 
-  // Подгрузка CSS для видимых шрифтов
+  const displayedFonts = currentFonts.slice(0, visibleCount);
+
+  // Подгрузка CSS для видимых шрифтов с принудительной перерисовкой
+  const [fontsLoaded, setFontsLoaded] = useState(0);
+  
   useEffect(() => {
-    if (activeTab !== 'fonts') return;
     const families = displayedFonts
       .filter(f => f.source === 'google')
       .map(f => f.family);
-    loadGoogleFontsBatch(families, 25);
-  }, [activeTab, displayedFonts]);
-
-  // Отрисовка Canvas для PNG
-  const drawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const fontSize = 60;
-    const fontDecl = `600 ${fontSize}px "${selectedFont.family}"`;
-    ctx.font = fontDecl;
     
-    const metrics = ctx.measureText(text);
-    const textWidth = metrics.width + 40;
-    const textHeight = fontSize * 1.5 + 40;
+    if (families.length === 0) return;
+    
+    const loadFonts = async () => {
+      await loadGoogleFontsBatch(families, 20);
+      // Принудительная перерисовка после загрузки шрифтов
+      setFontsLoaded(prev => prev + 1);
+    };
+    
+    loadFonts();
+  }, [displayedFonts.map(f => f.id).join(',')]);
 
-    canvas.width = Math.max(textWidth, 300);
-    canvas.height = Math.max(textHeight, 100);
-
-    ctx.font = fontDecl;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-  }, [text, selectedFont]);
-
+  // Сброс видимых при смене вкладки
   useEffect(() => {
-    const timeout = setTimeout(drawCanvas, 50);
-    return () => clearTimeout(timeout);
-  }, [drawCanvas]);
+    setVisibleCount(40);
+    setSelectedFontId('');
+  }, [activeTab]);
 
-  // Копирование Unicode-текста
-  const copyStyledText = async (styleId: string) => {
-    const styledText = applyStyle(text, styleId);
+  // ========== ГЛАВНАЯ ФУНКЦИЯ: КОПИРОВАНИЕ КАК PNG-СТИКЕР ==========
+  const copyAsSticker = async (fontFamily: string) => {
+    if (isCopying || !text.trim()) return;
+    setIsCopying(true);
+
     try {
-      if (navigator.clipboard && (window as any).isSecureContext) {
-        await navigator.clipboard.writeText(styledText);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = styledText;
-        textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
+      // Убеждаемся, что шрифт загружен
+      await loadGoogleFont(fontFamily);
+      // Небольшая задержка для загрузки шрифта
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas not supported');
+
+      const fontSize = 72;
+      const fontWeight = 600;
+      const padding = 40;
+      const fontDecl = `${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+      
+      ctx.font = fontDecl;
+      
+      const lines = text.split('\n');
+      const lineHeight = fontSize * 1.4;
+      let maxWidth = 0;
+      lines.forEach(line => {
+        const m = ctx.measureText(line);
+        if (m.width > maxWidth) maxWidth = m.width;
+      });
+
+      canvas.width = Math.max(maxWidth + padding * 2, 200);
+      canvas.height = Math.max(lines.length * lineHeight + padding * 2, 120);
+
+      // Прозрачный фон
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Рисуем текст
+      ctx.font = fontDecl;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      lines.forEach((line, i) => {
+        ctx.fillText(line, canvas.width / 2, padding + i * lineHeight);
+      });
+
+      // Конвертируем в blob
+      const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Failed to create blob');
+
+      const file = new File([blob], `sticker-${Date.now()}.png`, { type: 'image/png' });
+
+      // 1. Пробуем Clipboard API (работает только на HTTPS)
+      const canCopy = (window as any).isSecureContext && 
+                      navigator.clipboard && 
+                      typeof (navigator.clipboard as any).write === 'function' &&
+                      typeof (window as any).ClipboardItem === 'function';
+      
+      if (canCopy) {
+        try {
+          await (navigator.clipboard as any).write([
+            new (window as any).ClipboardItem({ 'image/png': blob })
+          ]);
+          showSuccess('Стикер скопирован! Вставьте в Instagram Reels.');
+          return;
+        } catch (e) {
+          console.log('Clipboard API failed:', e);
+        }
       }
 
-      const tg = (window as any).Telegram;
-      if (tg?.WebApp) {
-        tg.WebApp.HapticFeedback.notificationOccurred('success');
-        tg.WebApp.showAlert('Текст скопирован! Вставьте в Instagram.');
-      } else {
-        alert('Текст скопирован!');
+      // 2. Fallback: Share API (мобильные устройства)
+      try {
+        const navAny = navigator as any;
+        if (typeof navAny.share === 'function' && navAny.canShare?.({ files: [file] })) {
+          await navAny.share({ files: [file], title: 'Стикер для Instagram' });
+          return;
+        }
+      } catch (e) {
+        console.log('Share API failed:', e);
       }
+
+      // 3. Fallback: скачать файл
+      const link = document.createElement('a');
+      link.download = file.name;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showSuccess('Стикер скачан! Откройте его в галерее и поделитесь в Instagram.');
+
     } catch (err) {
-      alert('Не удалось скопировать');
+      console.error('Copy as sticker failed:', err);
+      alert('Не удалось создать стикер. Попробуйте ещё раз.');
+    } finally {
+      setIsCopying(false);
     }
   };
 
-  // Поделиться PNG
-  const shareImage = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-    if (!blob) return;
-
-    const file = new File([blob], `reels-text-${Date.now()}.png`, { type: 'image/png' });
-
-    try {
-      const navAny = navigator as any;
-      if (typeof navAny.share === 'function') {
-        await navAny.share({ files: [file], title: 'Reels Text' });
-        return;
-      }
-    } catch (e) {}
-
-    // Fallback: скачать
-    const link = document.createElement('a');
-    link.download = file.name;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+  const showSuccess = (message: string) => {
+    const tg = (window as any).Telegram;
+    if (tg?.WebApp) {
+      tg.WebApp.HapticFeedback.notificationOccurred('success');
+      tg.WebApp.showAlert(message);
+    } else {
+      alert(message);
+    }
   };
 
-  const toggleFavoriteStyle = (id: string) => {
-    setFavoriteStyles(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  const toggleFavorite = (id: string) => {
+    setFavorites(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
   };
 
-  const toggleFavoriteFont = (id: string) => {
-    setFavoriteFonts(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
-  };
+  const selectedFont = allFonts.find(f => f.id === selectedFontId);
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-black text-white">
-      {/* Header с полем ввода */}
+      {/* Header */}
       <Header text={text} onTextChange={setText} />
 
       {/* Заголовок раздела */}
@@ -355,36 +351,13 @@ const App: React.FC = () => {
           {activeTab === 'fonts' && 'Шрифты'}
           {activeTab === 'favorites' && 'Избранное'}
         </h2>
-        <div className="flex gap-2">
-          <button className="p-2 rounded-full bg-white/10 hover:bg-white/20">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </button>
-          <button className="p-2 rounded-full bg-white/10 hover:bg-white/20">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+        <div className="text-xs text-gray-500">
+          {currentFonts.length} шрифтов
         </div>
       </div>
 
-      {/* Фильтры */}
-      {activeTab === 'calligraphy' && (
-        <div className="px-4 pb-2">
-          <label className="flex items-center gap-2 text-sm text-gray-400">
-            <input
-              type="checkbox"
-              checked={showCyrillicStylesOnly}
-              onChange={(e) => setShowCyrillicStylesOnly(e.target.checked)}
-              className="rounded accent-purple-500"
-            />
-            Только с поддержкой кириллицы
-          </label>
-        </div>
-      )}
-
-      {activeTab === 'fonts' && (
+      {/* Фильтр кириллицы */}
+      {activeTab !== 'favorites' && (
         <div className="px-4 pb-2">
           <label className="flex items-center gap-2 text-sm text-gray-400">
             <input
@@ -399,26 +372,41 @@ const App: React.FC = () => {
       )}
 
       {/* Контент */}
-      <div className="flex-1 overflow-y-auto px-4 pb-24">
-        {activeTab === 'calligraphy' && (
+      <div className="flex-1 overflow-y-auto px-4 pb-32">
+        {isLoadingFonts ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+          </div>
+        ) : currentFonts.length === 0 ? (
+          <p className="text-center text-gray-400 py-10">
+            {activeTab === 'favorites' ? 'Нет избранных шрифтов' : 'Шрифты не найдены'}
+          </p>
+        ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              {displayedStyles.map(style => (
-                <StyleCard
-                  key={style.id}
-                  style={style}
+            <div className="text-xs text-gray-500 mb-3 text-center">
+              Показано {Math.min(displayedFonts.length, currentFonts.length)} из {currentFonts.length}
+            </div>
+            <div className="grid grid-cols-2 gap-3" key={fontsLoaded}>
+              {displayedFonts.map(font => (
+                <FontCard
+                  key={`${font.id}-${fontsLoaded}`}
+                  font={font}
                   text={text}
-                  isSelected={selectedStyleId === style.id}
-                  isFavorite={favoriteStyles.includes(style.id)}
-                  onSelect={() => setSelectedStyleId(style.id)}
-                  onToggleFavorite={() => toggleFavoriteStyle(style.id)}
-                  onCopy={() => copyStyledText(style.id)}
+                  isSelected={selectedFontId === font.id}
+                  isFavorite={favorites.includes(font.id)}
+                  onSelect={() => {
+                    setSelectedFontId(font.id);
+                    if (font.source === 'google') loadGoogleFont(font.family);
+                  }}
+                  onToggleFavorite={() => toggleFavorite(font.id)}
+                  onCopy={() => copyAsSticker(font.family)}
+                  accentColor={activeTab === 'calligraphy' ? 'purple' : 'blue'}
                 />
               ))}
             </div>
-            {displayedStyles.length < filteredStyles.length && (
+            {displayedFonts.length < currentFonts.length && (
               <button
-                onClick={() => setVisibleStylesCount(prev => prev + 20)}
+                onClick={() => setVisibleCount(prev => prev + 40)}
                 className="w-full mt-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-medium"
               >
                 Показать ещё
@@ -426,111 +414,8 @@ const App: React.FC = () => {
             )}
           </>
         )}
-
-        {activeTab === 'fonts' && (
-          <>
-            {isLoadingFonts ? (
-              <p className="text-center text-gray-400 py-10">Загружаю шрифты…</p>
-            ) : (
-              <>
-                <div className="text-xs text-gray-500 mb-3 text-center">
-                  Показано {displayedFonts.length} из {filteredFonts.length}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {displayedFonts.map(font => (
-                    <FontCard
-                      key={font.id}
-                      font={font}
-                      text={text}
-                      isSelected={selectedFontId === font.id}
-                      isFavorite={favoriteFonts.includes(font.id)}
-                      onSelect={() => {
-                        setSelectedFontId(font.id);
-                        if (font.source === 'google') loadGoogleFont(font.family);
-                      }}
-                      onToggleFavorite={() => toggleFavoriteFont(font.id)}
-                    />
-                  ))}
-                </div>
-                {displayedFonts.length < filteredFonts.length && (
-                  <button
-                    onClick={() => setVisibleFontsCount(prev => prev + 40)}
-                    className="w-full mt-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-medium"
-                  >
-                    Показать ещё
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Кнопка экспорта PNG */}
-            {selectedFontId && (
-              <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto">
-                <button
-                  onClick={shareImage}
-                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-bold text-lg shadow-lg"
-                >
-                  Поделиться PNG
-                </button>
-              </div>
-            )}
-          </>
-        )}
-
-        {activeTab === 'favorites' && (
-          <>
-            {favoriteStyles.length === 0 && favoriteFonts.length === 0 ? (
-              <p className="text-center text-gray-400 py-10">Нет избранных</p>
-            ) : (
-              <>
-                {favoriteStyles.length > 0 && (
-                  <>
-                    <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">Стили</h3>
-                    <div className="grid grid-cols-2 gap-3 mb-6">
-                      {UNICODE_STYLES.filter(s => favoriteStyles.includes(s.id)).map(style => (
-                        <StyleCard
-                          key={style.id}
-                          style={style}
-                          text={text}
-                          isSelected={selectedStyleId === style.id}
-                          isFavorite={true}
-                          onSelect={() => setSelectedStyleId(style.id)}
-                          onToggleFavorite={() => toggleFavoriteStyle(style.id)}
-                          onCopy={() => copyStyledText(style.id)}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-                {favoriteFonts.length > 0 && (
-                  <>
-                    <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">Шрифты</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      {allFonts.filter(f => favoriteFonts.includes(f.id)).map(font => (
-                        <FontCard
-                          key={font.id}
-                          font={font}
-                          text={text}
-                          isSelected={selectedFontId === font.id}
-                          isFavorite={true}
-                          onSelect={() => {
-                            setSelectedFontId(font.id);
-                            if (font.source === 'google') loadGoogleFont(font.family);
-                          }}
-                          onToggleFavorite={() => toggleFavoriteFont(font.id)}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </>
-        )}
       </div>
 
-      {/* Скрытый Canvas для PNG */}
-      <canvas ref={canvasRef} className="hidden" />
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-white/10 max-w-md mx-auto">
