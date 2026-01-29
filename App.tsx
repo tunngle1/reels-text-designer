@@ -328,18 +328,55 @@ const App: React.FC = () => {
       const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('Failed to create blob');
 
+      const file = new File([blob], `sticker-${Date.now()}.png`, { type: 'image/png' });
+
+      const downloadPng = () => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      };
+
       // Только копирование в буфер (как стикер)
       const diag = await getClipboardDiagnostics();
       const canCopy = diag.secure && diag.supportsClipboard && diag.supportsWrite && diag.supportsClipboardItem;
-      if (!canCopy) {
-        throw new Error(`ClipboardImageNotSupported: secure=${diag.secure} clipboard=${diag.supportsClipboard} write=${diag.supportsWrite} item=${diag.supportsClipboardItem} perm=${diag.permission ?? 'unknown'}`);
+
+      let copiedToClipboard = false;
+      if (canCopy) {
+        try {
+          // В некоторых окружениях (iOS/WebView) важно, чтобы это происходило строго в рамках user gesture.
+          // Здесь вызов идёт из onClick.
+          await (navigator.clipboard as any).write([new (window as any).ClipboardItem({ 'image/png': blob })]);
+          copiedToClipboard = true;
+          showSuccess('Стикер скопирован! Открой Instagram и вставь.');
+        } catch (e) {
+          // NotAllowedError / SecurityError — типично для iOS/Telegram WebView, даже на HTTPS
+          console.warn('Clipboard image write failed, will fallback to share/download', e);
+        }
       }
 
-      // В некоторых окружениях (iOS/WebView) важно, чтобы это происходило строго в рамках user gesture.
-      // Здесь вызов идёт из onClick, так что ок.
-      await (navigator.clipboard as any).write([new (window as any).ClipboardItem({ 'image/png': blob })]);
+      if (copiedToClipboard) return;
 
-      showSuccess('Стикер скопирован! Открой Instagram и вставь.');
+      // Fallback: системное «Поделиться» (это то, что обычно и делает референс на iOS)
+      try {
+        const navAny = navigator as any;
+        const canShareFiles = typeof navAny.share === 'function' && (!navAny.canShare || navAny.canShare({ files: [file] }));
+        if (canShareFiles) {
+          await navAny.share({ files: [file], title: 'Sticker', text: 'Instagram sticker' });
+          showSuccess('Открылось меню «Поделиться». Отправь в Instagram.');
+          return;
+        }
+      } catch (e) {
+        console.warn('Share failed, will fallback to download', e);
+      }
+
+      // Последний fallback: скачать PNG
+      downloadPng();
+      showSuccess('PNG сохранён. Открой его и отправь в Instagram.');
 
     } catch (err) {
       console.error('Copy as sticker failed:', err);
@@ -347,31 +384,6 @@ const App: React.FC = () => {
       const msg = String(eAny?.message || '');
       const name = String(eAny?.name || '');
       const diag = await getClipboardDiagnostics().catch(() => null);
-
-      if (msg.includes('ClipboardImageNotSupported')) {
-        alert(
-          'Не получается копировать PNG как стикер в буфер обмена.\n\n' +
-          'Чаще всего причина:\n' +
-          '- страница не в HTTPS\n' +
-          '- браузер/WebView не поддерживает clipboard.write для изображений\n' +
-          '- запрет разрешения clipboard-write\n\n' +
-          `Диагностика: ${msg}`
-        );
-        return;
-      }
-
-      // NotAllowedError / SecurityError — типично для iOS Safari / Telegram WebView / не-HTTPS
-      if (name === 'NotAllowedError' || name === 'SecurityError') {
-        alert(
-          'Копирование заблокировано браузером (нет разрешения).\n\n' +
-          'Проверь: \n' +
-          '- Открыто по HTTPS\n' +
-          '- Нажимаешь кнопку вручную (не автокопирование)\n' +
-          '- Если это Telegram WebView / iOS — там часто нельзя копировать PNG в буфер\n\n' +
-          `Ошибка: ${name}${msg ? `: ${msg}` : ''}`
-        );
-        return;
-      }
 
       alert(
         'Не удалось скопировать стикер.\n\n' +
