@@ -29,6 +29,9 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [text, setText] = useState('Текст для Reels');
   const [fontSize, setFontSize] = useState(60);
+  const [fontWeight, setFontWeight] = useState(600);
+  const [letterSpacing, setLetterSpacing] = useState(0);
+  const [lineHeight, setLineHeight] = useState(1.2);
   const [textColor, setTextColor] = useState('#FFFFFF');
   const [selectedFontId, setSelectedFontId] = useState('montserrat');
   const [onlyCyrillic, setOnlyCyrillic] = useState(true);
@@ -118,33 +121,68 @@ const App: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const lines = (text || '').split('\n');
+    const safeLetterSpacing = Number.isFinite(letterSpacing) ? letterSpacing : 0;
+    const safeLineHeight = Number.isFinite(lineHeight) ? lineHeight : 1.2;
+    const fontDecl = `${fontWeight} ${fontSize}px "${selectedFont.family}"`;
+
+    const measureLineWidth = (line: string) => {
+      if (safeLetterSpacing === 0 || line.length <= 1) {
+        ctx.font = fontDecl;
+        return ctx.measureText(line).width;
+      }
+      ctx.font = fontDecl;
+      let w = 0;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        w += ctx.measureText(ch).width;
+        if (i < line.length - 1) w += safeLetterSpacing;
+      }
+      return w;
+    };
+
     // Очистка
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Настройка шрифта
-    ctx.font = `${fontSize}px "${selectedFont.family}"`;
+    ctx.font = fontDecl;
     ctx.fillStyle = textColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Измерение текста для динамического изменения размера канваса если нужно
-    const metrics = ctx.measureText(text);
-    const textWidth = metrics.width + 40;
-    const textHeight = fontSize * 1.5;
+    const lineWidths = lines.map(measureLineWidth);
+    const maxWidth = Math.max(0, ...lineWidths);
+    const textWidth = maxWidth + 40;
+    const textHeight = Math.max(1, lines.length) * fontSize * safeLineHeight + 40;
 
     // Устанавливаем размер канваса под текст (с запасом)
     canvas.width = Math.max(textWidth, 300);
     canvas.height = Math.max(textHeight, 150);
 
     // Повторная настройка после изменения размера канваса
-    ctx.font = `${fontSize}px "${selectedFont.family}"`;
+    ctx.font = fontDecl;
     ctx.fillStyle = textColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    // Рисуем текст
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-  }, [text, fontSize, textColor, selectedFont]);
+    const startY = canvas.height / 2 - ((lines.length - 1) * fontSize * safeLineHeight) / 2;
+
+    lines.forEach((line, idx) => {
+      const y = startY + idx * fontSize * safeLineHeight;
+      if (safeLetterSpacing === 0 || line.length <= 1) {
+        ctx.fillText(line, canvas.width / 2, y);
+        return;
+      }
+
+      const lineWidth = lineWidths[idx] ?? 0;
+      let x = canvas.width / 2 - lineWidth / 2;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        ctx.fillText(ch, x, y);
+        x += ctx.measureText(ch).width + (i < line.length - 1 ? safeLetterSpacing : 0);
+      }
+    });
+  }, [text, fontSize, fontWeight, letterSpacing, lineHeight, textColor, selectedFont]);
 
   useEffect(() => {
     // Небольшая задержка чтобы шрифт успел примениться
@@ -312,12 +350,12 @@ const App: React.FC = () => {
       <div className="p-4 space-y-4">
         <div>
           <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Ваш текст</label>
-          <input
-            type="text"
+          <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[var(--tg-theme-bg-color)] focus:ring-2 focus:ring-[var(--tg-theme-button-color)] outline-none"
             placeholder="Введите фразу..."
+            rows={2}
           />
         </div>
 
@@ -354,6 +392,46 @@ const App: React.FC = () => {
               />
             </div>
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Жирность: {fontWeight}</label>
+            <input
+              type="range"
+              min="100"
+              max="900"
+              step="100"
+              value={fontWeight}
+              onChange={(e) => setFontWeight(parseInt(e.target.value))}
+              className="w-full accent-[var(--tg-theme-button-color)]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Межбуквенно: {letterSpacing}px</label>
+            <input
+              type="range"
+              min="-5"
+              max="20"
+              step="1"
+              value={letterSpacing}
+              onChange={(e) => setLetterSpacing(parseInt(e.target.value))}
+              className="w-full accent-[var(--tg-theme-button-color)]"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Межстрочно: {lineHeight.toFixed(1)}</label>
+          <input
+            type="range"
+            min="0.8"
+            max="2.0"
+            step="0.1"
+            value={lineHeight}
+            onChange={(e) => setLineHeight(parseFloat(e.target.value))}
+            className="w-full accent-[var(--tg-theme-button-color)]"
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -460,6 +538,15 @@ const App: React.FC = () => {
                 </div>
               ))}
             </div>
+
+            {activeTab !== 'upload' && displayedFonts.length < cyrillicFilteredFonts.length ? (
+              <button
+                onClick={() => setVisibleFontsCount(prev => Math.min(prev + 80, cyrillicFilteredFonts.length))}
+                className="w-full mt-4 py-3 rounded-2xl font-bold bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-800"
+              >
+                Показать ещё
+              </button>
+            ) : null}
           </div>
         )}
       </div>

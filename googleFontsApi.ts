@@ -46,7 +46,8 @@ export const loadGoogleFont = (fontFamily: string): void => {
   if (loadedFamilies.has(fontFamily)) return;
 
   const link = document.createElement('link');
-  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontFamily).replace(/%20/g, '+')}&display=swap`;
+  const familyParam = `${encodeURIComponent(fontFamily).replace(/%20/g, '+')}:wght@100;200;300;400;500;600;700;800;900`;
+  link.href = `https://fonts.googleapis.com/css2?family=${familyParam}&display=swap`;
   link.rel = 'stylesheet';
   link.setAttribute('data-font', fontFamily);
   document.head.appendChild(link);
@@ -64,7 +65,10 @@ export const loadGoogleFontsBatch = (fontFamilies: string[], perRequest: number 
   for (let i = 0; i < unique.length; i += perRequest) {
     const chunk = unique.slice(i, i + perRequest);
     const familyParams = chunk
-      .map(f => `family=${encodeURIComponent(f).replace(/%20/g, '+')}`)
+      .map(f => {
+        const family = `${encodeURIComponent(f).replace(/%20/g, '+')}:wght@100;200;300;400;500;600;700;800;900`;
+        return `family=${family}`;
+      })
       .join('&');
 
     const link = document.createElement('link');
