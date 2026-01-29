@@ -1,78 +1,196 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Font, Tab, AppState } from './types';
+import { Font, Tab } from './types';
 import { INITIAL_FONTS, STORAGE_KEYS } from './constants';
 import { fetchGoogleFonts, loadGoogleFont, loadGoogleFontsBatch, GoogleFont } from './googleFontsApi';
+import { UNICODE_STYLES, applyStyle, UnicodeStyleDef } from './unicodeStyles';
 
-// Вспомогательные компоненты
-const Header: React.FC = () => (
-  <header className="p-4 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10 bg-[var(--tg-theme-bg-color)]">
-    <h1 className="text-xl font-bold text-center">Reels Designer</h1>
-    <p className="text-xs text-center text-gray-500">Красивый текст для ваших видео</p>
+// Компонент заголовка
+const Header: React.FC<{ text: string; onTextChange: (t: string) => void }> = ({ text, onTextChange }) => (
+  <header className="p-4 bg-gradient-to-b from-purple-900/50 to-transparent">
+    <h1 className="text-2xl font-bold text-white mb-4">Создать</h1>
+    <input
+      type="text"
+      value={text}
+      onChange={(e) => onTextChange(e.target.value)}
+      placeholder="Введите текст..."
+      className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-white/50 text-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+    />
   </header>
 );
 
-const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
+// Компонент вкладки
+const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
   <button
     onClick={onClick}
-    className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${
-      active 
-        ? 'border-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-color)]' 
-        : 'border-transparent text-gray-500'
+    className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
+      active ? 'text-purple-400' : 'text-gray-500'
     }`}
   >
-    {children}
+    {icon}
+    <span className="text-xs">{label}</span>
   </button>
 );
 
+// Иконки для вкладок
+const CalligraphyIcon = () => (
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+  </svg>
+);
+
+const FontsIcon = () => (
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+  </svg>
+);
+
+const FavoritesIcon = () => (
+  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+  </svg>
+);
+
+// Карточка Unicode-стиля (для раздела Каллиграфия)
+const StyleCard: React.FC<{
+  style: UnicodeStyleDef;
+  text: string;
+  isSelected: boolean;
+  isFavorite: boolean;
+  onSelect: () => void;
+  onToggleFavorite: () => void;
+  onCopy: () => void;
+}> = ({ style, text, isSelected, isFavorite, onSelect, onToggleFavorite, onCopy }) => {
+  const styledText = applyStyle(text || 'Пример текста', style.id);
+  
+  return (
+    <div
+      onClick={onSelect}
+      className={`relative p-4 rounded-2xl cursor-pointer transition-all ${
+        isSelected
+          ? 'bg-gradient-to-br from-purple-600/30 to-pink-600/30 border-2 border-purple-500'
+          : 'bg-white/5 border border-white/10 hover:bg-white/10'
+      }`}
+    >
+      {/* Название стиля */}
+      <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">
+        {style.nameRu}
+        {style.supportsCyrillic && <span className="ml-1 text-green-400">•</span>}
+      </div>
+      
+      {/* Превью текста */}
+      <div className="text-white text-lg leading-relaxed min-h-[48px] break-words">
+        {styledText}
+      </div>
+      
+      {/* Кнопка избранного */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite();
+        }}
+        className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${
+          isFavorite ? 'text-pink-500' : 'text-gray-500 hover:text-gray-300'
+        }`}
+      >
+        <svg className="w-5 h-5" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+      </button>
+
+      {/* Кнопка копирования при выборе */}
+      {isSelected && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopy();
+          }}
+          className="absolute bottom-3 right-3 px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded-lg text-xs text-white font-medium transition-colors"
+        >
+          Копировать
+        </button>
+      )}
+    </div>
+  );
+};
+
+// Карточка шрифта (для раздела Шрифты)
+const FontCard: React.FC<{
+  font: Font;
+  text: string;
+  isSelected: boolean;
+  isFavorite: boolean;
+  onSelect: () => void;
+  onToggleFavorite: () => void;
+}> = ({ font, text, isSelected, isFavorite, onSelect, onToggleFavorite }) => (
+  <div
+    onClick={onSelect}
+    className={`relative p-4 rounded-2xl cursor-pointer transition-all ${
+      isSelected
+        ? 'bg-gradient-to-br from-blue-600/30 to-cyan-600/30 border-2 border-blue-500'
+        : 'bg-white/5 border border-white/10 hover:bg-white/10'
+    }`}
+  >
+    {/* Название шрифта */}
+    <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-2 truncate">
+      {font.name}
+    </div>
+    
+    {/* Превью текста */}
+    <div 
+      className="text-white text-lg leading-relaxed min-h-[48px] break-words"
+      style={{ fontFamily: font.family }}
+    >
+      {text || font.name}
+    </div>
+    
+    {/* Кнопка избранного */}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleFavorite();
+      }}
+      className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${
+        isFavorite ? 'text-pink-500' : 'text-gray-500 hover:text-gray-300'
+      }`}
+    >
+      <svg className="w-5 h-5" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+      </svg>
+    </button>
+  </div>
+);
+
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('all');
-  const [text, setText] = useState('Текст для Reels');
-  const [fontSize, setFontSize] = useState(60);
-  const [fontWeight, setFontWeight] = useState(600);
-  const [letterSpacing, setLetterSpacing] = useState(0);
-  const [lineHeight, setLineHeight] = useState(1.2);
-  const [unicodeStyle, setUnicodeStyle] = useState<'normal' | 'bold' | 'italic' | 'script' | 'fraktur' | 'double' | 'mono' | 'fullwidth'>('normal');
-  const [textColor, setTextColor] = useState('#FFFFFF');
+  const [activeTab, setActiveTab] = useState<Tab>('calligraphy');
+  const [text, setText] = useState('владик пуся');
+  const [selectedStyleId, setSelectedStyleId] = useState<string>('normal');
   const [selectedFontId, setSelectedFontId] = useState('montserrat');
-  const [onlyCyrillic, setOnlyCyrillic] = useState(true);
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [customFonts, setCustomFonts] = useState<Font[]>([]);
+  const [favoriteStyles, setFavoriteStyles] = useState<string[]>([]);
+  const [favoriteFonts, setFavoriteFonts] = useState<string[]>([]);
   const [googleFonts, setGoogleFonts] = useState<Font[]>([]);
   const [isLoadingFonts, setIsLoadingFonts] = useState(false);
-  const [visibleFontsCount, setVisibleFontsCount] = useState(80);
+  const [visibleStylesCount, setVisibleStylesCount] = useState(20);
+  const [visibleFontsCount, setVisibleFontsCount] = useState(40);
+  const [onlyCyrillic, setOnlyCyrillic] = useState(true);
+  const [showCyrillicStylesOnly, setShowCyrillicStylesOnly] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
 
-  // Инициализация данных из localStorage
+  // Загрузка избранного из localStorage
   useEffect(() => {
-    const savedFavorites = localStorage.getItem(STORAGE_KEYS.FAVORITES);
-    if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
+    const savedFavoriteStyles = localStorage.getItem('reels_favorite_styles');
+    if (savedFavoriteStyles) setFavoriteStyles(JSON.parse(savedFavoriteStyles));
+    
+    const savedFavoriteFonts = localStorage.getItem(STORAGE_KEYS.FAVORITES);
+    if (savedFavoriteFonts) setFavoriteFonts(JSON.parse(savedFavoriteFonts));
 
-    const savedCustom = localStorage.getItem(STORAGE_KEYS.CUSTOM_FONTS);
-    if (savedCustom) {
-      const parsed: Font[] = JSON.parse(savedCustom);
-      setCustomFonts(parsed);
-      // Загружаем FontFace для кастомных шрифтов
-      parsed.forEach(f => {
-        if (f.url) {
-          const fontFace = new FontFace(f.family, `url(${f.url})`);
-          fontFace.load().then(loaded => {
-            (document as any).fonts.add(loaded);
-          }).catch(console.error);
-        }
-      });
-    }
-
-    // Сообщаем Telegram, что приложение готово
-    // Fix: Cast window to any to access the Telegram object without TypeScript errors
+    // Telegram WebApp
     const tg = (window as any).Telegram;
     if (tg?.WebApp) {
       tg.WebApp.ready();
       tg.WebApp.expand();
     }
 
-    // Загружаем шрифты из Google Fonts API
+    // Загрузка Google Fonts
     const loadFonts = async () => {
       setIsLoadingFonts(true);
       try {
@@ -81,13 +199,11 @@ const App: React.FC = () => {
           id: `google_${gf.family.replace(/\s+/g, '_').toLowerCase()}`,
           name: gf.family,
           family: gf.family,
-          source: 'google' as const
-          ,
+          source: 'google' as const,
           subsets: gf.subsets,
           category: gf.category
         }));
         setGoogleFonts(convertedFonts);
-        // Предзагружаем первые 10 шрифтов
         fonts.slice(0, 10).forEach(f => loadGoogleFont(f.family));
       } catch (error) {
         console.error('Failed to load Google Fonts:', error);
@@ -98,640 +214,347 @@ const App: React.FC = () => {
     loadFonts();
   }, []);
 
-  useEffect(() => {
-    setVisibleFontsCount(80);
-  }, [activeTab]);
-
   // Сохранение избранного
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favorites));
-  }, [favorites]);
+    localStorage.setItem('reels_favorite_styles', JSON.stringify(favoriteStyles));
+  }, [favoriteStyles]);
 
-  // Сохранение кастомных шрифтов
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CUSTOM_FONTS, JSON.stringify(customFonts));
-  }, [customFonts]);
+    localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favoriteFonts));
+  }, [favoriteFonts]);
 
-  const allFonts = [...INITIAL_FONTS, ...googleFonts, ...customFonts];
+  const allFonts = [...INITIAL_FONTS, ...googleFonts];
   const selectedFont = allFonts.find(f => f.id === selectedFontId) || INITIAL_FONTS[0];
 
-  // Логика отрисовки на Canvas
-  const drawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const lines = (text || '').split('\n');
-    const safeLetterSpacing = Number.isFinite(letterSpacing) ? letterSpacing : 0;
-    const safeLineHeight = Number.isFinite(lineHeight) ? lineHeight : 1.2;
-    const fontDecl = `${fontWeight} ${fontSize}px "${selectedFont.family}"`;
-
-    const measureLineWidth = (line: string) => {
-      if (safeLetterSpacing === 0 || line.length <= 1) {
-        ctx.font = fontDecl;
-        return ctx.measureText(line).width;
-      }
-      ctx.font = fontDecl;
-      let w = 0;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        w += ctx.measureText(ch).width;
-        if (i < line.length - 1) w += safeLetterSpacing;
-      }
-      return w;
-    };
-
-    // Очистка
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Настройка шрифта
-    ctx.font = fontDecl;
-    ctx.fillStyle = textColor;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    const lineWidths = lines.map(measureLineWidth);
-    const maxWidth = Math.max(0, ...lineWidths);
-    const textWidth = maxWidth + 40;
-    const textHeight = Math.max(1, lines.length) * fontSize * safeLineHeight + 40;
-
-    // Устанавливаем размер канваса под текст (с запасом)
-    canvas.width = Math.max(textWidth, 300);
-    canvas.height = Math.max(textHeight, 150);
-
-    // Повторная настройка после изменения размера канваса
-    ctx.font = fontDecl;
-    ctx.fillStyle = textColor;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    const startY = canvas.height / 2 - ((lines.length - 1) * fontSize * safeLineHeight) / 2;
-
-    lines.forEach((line, idx) => {
-      const y = startY + idx * fontSize * safeLineHeight;
-      if (safeLetterSpacing === 0 || line.length <= 1) {
-        ctx.fillText(line, canvas.width / 2, y);
-        return;
-      }
-
-      const lineWidth = lineWidths[idx] ?? 0;
-      let x = canvas.width / 2 - lineWidth / 2;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        ctx.fillText(ch, x, y);
-        x += ctx.measureText(ch).width + (i < line.length - 1 ? safeLetterSpacing : 0);
-      }
-    });
-  }, [text, fontSize, fontWeight, letterSpacing, lineHeight, textColor, selectedFont]);
-
-  useEffect(() => {
-    // Небольшая задержка чтобы шрифт успел примениться
-    const timeout = setTimeout(drawCanvas, 50);
-    return () => clearTimeout(timeout);
-  }, [drawCanvas]);
-
-  const toggleFavorite = (id: string) => {
-    setFavorites(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      const fontName = file.name.split('.')[0];
-      const fontFamily = `CustomFont_${Date.now()}`;
-      
-      const newFont: Font = {
-        id: fontFamily,
-        name: fontName,
-        family: fontFamily,
-        source: 'custom',
-        url: base64
-      };
-
-      try {
-        const fontFace = new FontFace(fontFamily, `url(${base64})`);
-        const loaded = await fontFace.load();
-        (document as any).fonts.add(loaded);
-        
-        setCustomFonts(prev => [...prev, newFont]);
-        setSelectedFontId(newFont.id);
-        setActiveTab('all');
-      } catch (err) {
-        alert('Ошибка загрузки шрифта. Убедитесь, что это корректный .ttf или .otf файл.');
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const copyToClipboard = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    try {
-      const canUseImageClipboard =
-        typeof window !== 'undefined' &&
-        (window as any).isSecureContext &&
-        typeof (window as any).ClipboardItem !== 'undefined' &&
-        !!navigator.clipboard?.write;
-
-      if (!canUseImageClipboard) {
-        await shareImage();
-        return;
-      }
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        try {
-          const item = new ClipboardItem({ 'image/png': blob });
-          await navigator.clipboard.write([item]);
-          // Fix: Cast window to any to access the Telegram object without TypeScript errors
-          const tg = (window as any).Telegram;
-          if (tg?.WebApp) {
-            tg.WebApp.HapticFeedback.notificationOccurred('success');
-            tg.WebApp.showAlert('Изображение скопировано!');
-          } else {
-            alert('Скопировано в буфер обмена!');
-          }
-        } catch (err) {
-          downloadImage();
-        }
-      }, 'image/png');
-    } catch (err) {
-      downloadImage();
-    }
-  };
-
-  const shareImage = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-    if (!blob) {
-      downloadImage();
-      return;
-    }
-
-    const file = new File([blob], `reels-text-${Date.now()}.png`, { type: 'image/png' });
-
-    try {
-      const navAny = navigator as any;
-      const canShareFiles = typeof navAny.share === 'function' && (!navAny.canShare || navAny.canShare({ files: [file] }));
-      if (canShareFiles) {
-        await navAny.share({ files: [file], title: 'Reels Text', text: 'PNG' });
-        return;
-      }
-    } catch (e) {
-      // ignore and fallback to download
-    }
-
-    downloadImage();
-  };
-
-  const transformTextToUnicodeStyle = useCallback((input: string) => {
-    const mapRange = (ch: string, upperBase: number, lowerBase: number, digitBase?: number) => {
-      const code = ch.codePointAt(0);
-      if (!code) return ch;
-      if (code >= 65 && code <= 90) return String.fromCodePoint(upperBase + (code - 65));
-      if (code >= 97 && code <= 122) return String.fromCodePoint(lowerBase + (code - 97));
-      if (digitBase !== undefined && code >= 48 && code <= 57) return String.fromCodePoint(digitBase + (code - 48));
-      return ch;
-    };
-
-    const toFullwidth = (ch: string) => {
-      const code = ch.codePointAt(0);
-      if (!code) return ch;
-      if (code === 32) return String.fromCodePoint(0x3000);
-      if (code >= 33 && code <= 126) return String.fromCodePoint(0xFF01 + (code - 33));
-      return ch;
-    };
-
-    const convertChar = (ch: string) => {
-      switch (unicodeStyle) {
-        case 'bold':
-          return mapRange(ch, 0x1D400, 0x1D41A, 0x1D7CE);
-        case 'italic':
-          return mapRange(ch, 0x1D434, 0x1D44E);
-        case 'script':
-          return mapRange(ch, 0x1D49C, 0x1D4B6);
-        case 'fraktur':
-          return mapRange(ch, 0x1D504, 0x1D51E);
-        case 'double':
-          return mapRange(ch, 0x1D538, 0x1D552, 0x1D7D8);
-        case 'mono':
-          return mapRange(ch, 0x1D670, 0x1D68A, 0x1D7F6);
-        case 'fullwidth':
-          return toFullwidth(ch);
-        case 'normal':
-        default:
-          return ch;
-      }
-    };
-
-    return Array.from(input).map(convertChar).join('');
-  }, [unicodeStyle]);
-
-  const unicodeStyledText = transformTextToUnicodeStyle(text);
-
-  const copyUnicodeText = async () => {
-    try {
-      const canUseClipboardApi = typeof navigator !== 'undefined' && !!navigator.clipboard && (window as any).isSecureContext;
-      if (canUseClipboardApi) {
-        await navigator.clipboard.writeText(unicodeStyledText);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = unicodeStyledText;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.top = '0';
-        textarea.style.left = '0';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(textarea);
-        if (!ok) throw new Error('execCommand(copy) failed');
-      }
-
-      const tg = (window as any).Telegram;
-      if (tg?.WebApp) {
-        tg.WebApp.HapticFeedback.notificationOccurred('success');
-        tg.WebApp.showAlert('Стилизованный текст скопирован!');
-      } else {
-        alert('Стилизованный текст скопирован!');
-      }
-    } catch (err) {
-      alert('Не удалось скопировать текст');
-    }
-  };
-
-  const downloadImage = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const link = document.createElement('a');
-    link.download = `reels-text-${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  };
-
-  const copyText = async () => {
-    try {
-      const canUseClipboardApi = typeof navigator !== 'undefined' && !!navigator.clipboard && (window as any).isSecureContext;
-      if (canUseClipboardApi) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.top = '0';
-        textarea.style.left = '0';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(textarea);
-        if (!ok) throw new Error('execCommand(copy) failed');
-      }
-      const tg = (window as any).Telegram;
-      if (tg?.WebApp) {
-        tg.WebApp.HapticFeedback.notificationOccurred('success');
-        tg.WebApp.showAlert('Текст скопирован!');
-      } else {
-        alert('Текст скопирован!');
-      }
-    } catch (err) {
-      alert('Не удалось скопировать текст');
-    }
-  };
-
-  const filteredFonts = activeTab === 'all' 
-    ? allFonts 
-    : activeTab === 'favorites' 
-      ? allFonts.filter(f => favorites.includes(f.id))
-      : [];
-
-  const cyrillicFilteredFonts = activeTab === 'upload' || !onlyCyrillic
-    ? filteredFonts
-    : filteredFonts.filter(f => {
+  // Фильтрация шрифтов по кириллице
+  const filteredFonts = onlyCyrillic
+    ? allFonts.filter(f => {
         if (f.source !== 'google') return true;
         const subsets = f.subsets || [];
         return subsets.includes('cyrillic') || subsets.includes('cyrillic-ext');
-      });
+      })
+    : allFonts;
 
-  const displayedFonts = activeTab === 'upload' ? cyrillicFilteredFonts : cyrillicFilteredFonts.slice(0, visibleFontsCount);
+  // Фильтрация стилей
+  const filteredStyles = showCyrillicStylesOnly
+    ? UNICODE_STYLES.filter(s => s.supportsCyrillic)
+    : UNICODE_STYLES;
 
+  const displayedStyles = filteredStyles.slice(0, visibleStylesCount);
+  const displayedFonts = filteredFonts.slice(0, visibleFontsCount);
+
+  // Подгрузка CSS для видимых шрифтов
   useEffect(() => {
-    if (activeTab === 'upload') return;
+    if (activeTab !== 'fonts') return;
     const families = displayedFonts
       .filter(f => f.source === 'google')
       .map(f => f.family);
     loadGoogleFontsBatch(families, 25);
   }, [activeTab, displayedFonts]);
 
-  const handleListScroll = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    if (activeTab === 'upload') return;
+  // Отрисовка Canvas для PNG
+  const drawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    const thresholdPx = 250;
-    const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - thresholdPx;
-    if (isNearBottom) {
-      setVisibleFontsCount(prev => Math.min(prev + 80, cyrillicFilteredFonts.length));
+    const fontSize = 60;
+    const fontDecl = `600 ${fontSize}px "${selectedFont.family}"`;
+    ctx.font = fontDecl;
+    
+    const metrics = ctx.measureText(text);
+    const textWidth = metrics.width + 40;
+    const textHeight = fontSize * 1.5 + 40;
+
+    canvas.width = Math.max(textWidth, 300);
+    canvas.height = Math.max(textHeight, 100);
+
+    ctx.font = fontDecl;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  }, [text, selectedFont]);
+
+  useEffect(() => {
+    const timeout = setTimeout(drawCanvas, 50);
+    return () => clearTimeout(timeout);
+  }, [drawCanvas]);
+
+  // Копирование Unicode-текста
+  const copyStyledText = async (styleId: string) => {
+    const styledText = applyStyle(text, styleId);
+    try {
+      if (navigator.clipboard && (window as any).isSecureContext) {
+        await navigator.clipboard.writeText(styledText);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = styledText;
+        textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+
+      const tg = (window as any).Telegram;
+      if (tg?.WebApp) {
+        tg.WebApp.HapticFeedback.notificationOccurred('success');
+        tg.WebApp.showAlert('Текст скопирован! Вставьте в Instagram.');
+      } else {
+        alert('Текст скопирован!');
+      }
+    } catch (err) {
+      alert('Не удалось скопировать');
     }
-  }, [activeTab, cyrillicFilteredFonts.length]);
+  };
+
+  // Поделиться PNG
+  const shareImage = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) return;
+
+    const file = new File([blob], `reels-text-${Date.now()}.png`, { type: 'image/png' });
+
+    try {
+      const navAny = navigator as any;
+      if (typeof navAny.share === 'function') {
+        await navAny.share({ files: [file], title: 'Reels Text' });
+        return;
+      }
+    } catch (e) {}
+
+    // Fallback: скачать
+    const link = document.createElement('a');
+    link.download = file.name;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+
+  const toggleFavoriteStyle = (id: string) => {
+    setFavoriteStyles(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  };
+
+  const toggleFavoriteFont = (id: string) => {
+    setFavoriteFonts(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
+  };
 
   return (
-    <div className="flex flex-col min-h-screen max-w-md mx-auto">
-      <Header />
+    <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-black text-white">
+      {/* Header с полем ввода */}
+      <Header text={text} onTextChange={setText} />
 
-      {/* Preview Area */}
-      <div className="p-4 flex flex-col items-center bg-[var(--tg-theme-secondary-bg-color)] min-h-[250px] justify-center relative overflow-hidden">
-        <div className="checkerboard-bg absolute inset-0 opacity-10 pointer-events-none"></div>
-        <canvas 
-          ref={canvasRef} 
-          className="max-w-full h-auto drop-shadow-lg"
-          style={{ background: 'transparent' }}
-        />
-        <div className="absolute bottom-2 right-2 text-[10px] text-gray-400 font-mono">PNG / Прозрачный фон</div>
+      {/* Заголовок раздела */}
+      <div className="px-4 py-3 flex items-center justify-between">
+        <h2 className="text-xl font-bold">
+          {activeTab === 'calligraphy' && 'Каллиграфия'}
+          {activeTab === 'fonts' && 'Шрифты'}
+          {activeTab === 'favorites' && 'Избранное'}
+        </h2>
+        <div className="flex gap-2">
+          <button className="p-2 rounded-full bg-white/10 hover:bg-white/20">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+          <button className="p-2 rounded-full bg-white/10 hover:bg-white/20">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Controls */}
-      <div className="p-4 space-y-4">
-        <div>
-          <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Ваш текст</label>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[var(--tg-theme-bg-color)] focus:ring-2 focus:ring-[var(--tg-theme-button-color)] outline-none"
-            placeholder="Введите фразу..."
-            rows={2}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Размер: {fontSize}px</label>
+      {/* Фильтры */}
+      {activeTab === 'calligraphy' && (
+        <div className="px-4 pb-2">
+          <label className="flex items-center gap-2 text-sm text-gray-400">
             <input
-              type="range"
-              min="20"
-              max="150"
-              value={fontSize}
-              onChange={(e) => setFontSize(parseInt(e.target.value))}
-              className="w-full accent-[var(--tg-theme-button-color)]"
+              type="checkbox"
+              checked={showCyrillicStylesOnly}
+              onChange={(e) => setShowCyrillicStylesOnly(e.target.checked)}
+              className="rounded accent-purple-500"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Цвет</label>
-            <div className="flex gap-2">
-              <input
-                type="color"
-                value={textColor}
-                onChange={(e) => setTextColor(e.target.value)}
-                className="w-10 h-10 p-0 border-0 rounded-lg cursor-pointer bg-transparent"
-              />
-              <button 
-                onClick={() => setTextColor('#FFFFFF')}
-                className="w-8 h-8 rounded-full border border-gray-300 bg-white"
-                title="Белый"
-              />
-              <button 
-                onClick={() => setTextColor('#000000')}
-                className="w-8 h-8 rounded-full border border-gray-300 bg-black"
-                title="Черный"
-              />
-            </div>
-          </div>
+            Только с поддержкой кириллицы
+          </label>
         </div>
+      )}
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Жирность: {fontWeight}</label>
+      {activeTab === 'fonts' && (
+        <div className="px-4 pb-2">
+          <label className="flex items-center gap-2 text-sm text-gray-400">
             <input
-              type="range"
-              min="100"
-              max="900"
-              step="100"
-              value={fontWeight}
-              onChange={(e) => setFontWeight(parseInt(e.target.value))}
-              className="w-full accent-[var(--tg-theme-button-color)]"
+              type="checkbox"
+              checked={onlyCyrillic}
+              onChange={(e) => setOnlyCyrillic(e.target.checked)}
+              className="rounded accent-purple-500"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Межбуквенно: {letterSpacing}px</label>
-            <input
-              type="range"
-              min="-5"
-              max="20"
-              step="1"
-              value={letterSpacing}
-              onChange={(e) => setLetterSpacing(parseInt(e.target.value))}
-              className="w-full accent-[var(--tg-theme-button-color)]"
-            />
-          </div>
+            Только с кириллицей
+          </label>
         </div>
+      )}
 
-        <div>
-          <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Межстрочно: {lineHeight.toFixed(1)}</label>
-          <input
-            type="range"
-            min="0.8"
-            max="2.0"
-            step="0.1"
-            value={lineHeight}
-            onChange={(e) => setLineHeight(parseFloat(e.target.value))}
-            className="w-full accent-[var(--tg-theme-button-color)]"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Стиль текста</label>
-            <select
-              value={unicodeStyle}
-              onChange={(e) => setUnicodeStyle(e.target.value as any)}
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[var(--tg-theme-bg-color)] outline-none"
-            >
-              <option value="normal">Обычный</option>
-              <option value="bold">Bold</option>
-              <option value="italic">Italic</option>
-              <option value="script">Script</option>
-              <option value="fraktur">Fraktur</option>
-              <option value="double">Double</option>
-              <option value="mono">Mono</option>
-              <option value="fullwidth">Fullwidth</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Превью</label>
-            <div className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[var(--tg-theme-bg-color)] text-sm truncate">
-              {unicodeStyledText || '—'}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={copyText}
-            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z" />
-              <path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-4.586l1.293-1.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L10.414 13H15v3a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM15 11h2a1 1 0 110 2h-2v-2z" />
-            </svg>
-            Копировать текст
-          </button>
-          <button
-            onClick={copyUnicodeText}
-            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-              <path d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" />
-            </svg>
-            Текст для IG
-          </button>
-          <button
-            onClick={shareImage}
-            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M15 8a3 3 0 00-2.977 2.65l-3.36 1.68a3 3 0 10.038 1.7l3.323-1.66A3 3 0 1015 8z" />
-            </svg>
-            Поделиться
-          </button>
-          <button
-            onClick={copyToClipboard}
-            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)]"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-              <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-            </svg>
-            Скопировать PNG
-          </button>
-          <button
-            onClick={downloadImage}
-            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M3 14a1 1 0 011-1h3v2H5v2h10v-2h-2v-2h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z" />
-              <path d="M7 10a1 1 0 011.707-.707L9 9.586V3h2v6.586l.293-.293A1 1 0 0112.707 10l-2 2a1 1 0 01-1.414 0l-2-2A1 1 0 017 10z" />
-            </svg>
-            Скачать PNG
-          </button>
-        </div>
-
-        <label className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[var(--tg-theme-secondary-bg-color)]">
-          <span className="text-sm text-[var(--tg-theme-text-color)]">Только кириллица</span>
-          <input
-            type="checkbox"
-            checked={onlyCyrillic}
-            onChange={(e) => setOnlyCyrillic(e.target.checked)}
-            className="h-5 w-5 accent-[var(--tg-theme-button-color)]"
-          />
-        </label>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex px-4 border-b border-gray-100 dark:border-gray-900">
-        <TabButton active={activeTab === 'all'} onClick={() => setActiveTab('all')}>Все</TabButton>
-        <TabButton active={activeTab === 'favorites'} onClick={() => setActiveTab('favorites')}>Избранные</TabButton>
-        <TabButton active={activeTab === 'upload'} onClick={() => setActiveTab('upload')}>Загрузить</TabButton>
-      </div>
-
-      {/* Font List */}
-      <div ref={listRef} onScroll={handleListScroll} className="flex-1 overflow-y-auto p-4 pb-24">
-        {activeTab === 'upload' ? (
-          <div className="text-center p-8 border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-3xl">
-            <p className="text-sm text-gray-500 mb-4">Вы можете загрузить свои шрифты формата .ttf или .otf</p>
-            <label className="inline-block px-6 py-3 bg-[var(--tg-theme-secondary-bg-color)] rounded-xl cursor-pointer hover:opacity-80 transition-opacity">
-              <span className="font-medium">Выбрать файл</span>
-              <input type="file" accept=".ttf,.otf" className="hidden" onChange={handleFileUpload} />
-            </label>
-          </div>
-        ) : activeTab === 'all' && isLoadingFonts ? (
-          <p className="text-center text-gray-400 py-10">Загружаю шрифты…</p>
-        ) : filteredFonts.length === 0 ? (
-          <p className="text-center text-gray-400 py-10">Список пуст</p>
-        ) : (
-          <div>
-            <div className="text-[11px] text-gray-400 mb-3 text-center">
-              Показано {Math.min(displayedFonts.length, cyrillicFilteredFonts.length)} из {cyrillicFilteredFonts.length}
-            </div>
+      {/* Контент */}
+      <div className="flex-1 overflow-y-auto px-4 pb-24">
+        {activeTab === 'calligraphy' && (
+          <>
             <div className="grid grid-cols-2 gap-3">
-              {displayedFonts.map(font => (
-                <div 
-                  key={font.id}
-                  onClick={() => {
-                    setSelectedFontId(font.id);
-                    if (font.source === 'google') {
-                      loadGoogleFont(font.family);
-                    }
-                  }}
-                  className={`p-3 rounded-2xl border-2 transition-all flex flex-col cursor-pointer ${
-                    selectedFontId === font.id 
-                      ? 'border-[var(--tg-theme-button-color)] bg-[var(--tg-theme-button-color)] bg-opacity-5' 
-                      : 'border-transparent bg-[var(--tg-theme-secondary-bg-color)]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[10px] font-medium text-gray-500 truncate">{font.name}</span>
-                      <span className="text-[9px] uppercase tracking-widest text-gray-300">{font.source}</span>
-                    </div>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFavorite(font.id);
-                      }}
-                      className={`p-1 rounded-full transition-colors ${
-                        favorites.includes(font.id) ? 'text-red-500' : 'text-gray-300'
-                      }`}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={favorites.includes(font.id) ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </button>
-                  </div>
-                  <span 
-                    className="text-base truncate"
-                    style={{ fontFamily: font.family }}
-                  >
-                    {text || font.name}
-                  </span>
-                </div>
+              {displayedStyles.map(style => (
+                <StyleCard
+                  key={style.id}
+                  style={style}
+                  text={text}
+                  isSelected={selectedStyleId === style.id}
+                  isFavorite={favoriteStyles.includes(style.id)}
+                  onSelect={() => setSelectedStyleId(style.id)}
+                  onToggleFavorite={() => toggleFavoriteStyle(style.id)}
+                  onCopy={() => copyStyledText(style.id)}
+                />
               ))}
             </div>
-
-            {activeTab !== 'upload' && displayedFonts.length < cyrillicFilteredFonts.length ? (
+            {displayedStyles.length < filteredStyles.length && (
               <button
-                onClick={() => setVisibleFontsCount(prev => Math.min(prev + 80, cyrillicFilteredFonts.length))}
-                className="w-full mt-4 py-3 rounded-2xl font-bold bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-800"
+                onClick={() => setVisibleStylesCount(prev => prev + 20)}
+                className="w-full mt-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-medium"
               >
                 Показать ещё
               </button>
-            ) : null}
-          </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'fonts' && (
+          <>
+            {isLoadingFonts ? (
+              <p className="text-center text-gray-400 py-10">Загружаю шрифты…</p>
+            ) : (
+              <>
+                <div className="text-xs text-gray-500 mb-3 text-center">
+                  Показано {displayedFonts.length} из {filteredFonts.length}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {displayedFonts.map(font => (
+                    <FontCard
+                      key={font.id}
+                      font={font}
+                      text={text}
+                      isSelected={selectedFontId === font.id}
+                      isFavorite={favoriteFonts.includes(font.id)}
+                      onSelect={() => {
+                        setSelectedFontId(font.id);
+                        if (font.source === 'google') loadGoogleFont(font.family);
+                      }}
+                      onToggleFavorite={() => toggleFavoriteFont(font.id)}
+                    />
+                  ))}
+                </div>
+                {displayedFonts.length < filteredFonts.length && (
+                  <button
+                    onClick={() => setVisibleFontsCount(prev => prev + 40)}
+                    className="w-full mt-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-medium"
+                  >
+                    Показать ещё
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Кнопка экспорта PNG */}
+            {selectedFontId && (
+              <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto">
+                <button
+                  onClick={shareImage}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-bold text-lg shadow-lg"
+                >
+                  Поделиться PNG
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'favorites' && (
+          <>
+            {favoriteStyles.length === 0 && favoriteFonts.length === 0 ? (
+              <p className="text-center text-gray-400 py-10">Нет избранных</p>
+            ) : (
+              <>
+                {favoriteStyles.length > 0 && (
+                  <>
+                    <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">Стили</h3>
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      {UNICODE_STYLES.filter(s => favoriteStyles.includes(s.id)).map(style => (
+                        <StyleCard
+                          key={style.id}
+                          style={style}
+                          text={text}
+                          isSelected={selectedStyleId === style.id}
+                          isFavorite={true}
+                          onSelect={() => setSelectedStyleId(style.id)}
+                          onToggleFavorite={() => toggleFavoriteStyle(style.id)}
+                          onCopy={() => copyStyledText(style.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {favoriteFonts.length > 0 && (
+                  <>
+                    <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">Шрифты</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {allFonts.filter(f => favoriteFonts.includes(f.id)).map(font => (
+                        <FontCard
+                          key={font.id}
+                          font={font}
+                          text={text}
+                          isSelected={selectedFontId === font.id}
+                          isFavorite={true}
+                          onSelect={() => {
+                            setSelectedFontId(font.id);
+                            if (font.source === 'google') loadGoogleFont(font.family);
+                          }}
+                          onToggleFavorite={() => toggleFavoriteFont(font.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </>
         )}
       </div>
 
-      <style>{`
-        .checkerboard-bg {
-          background-image: linear-gradient(45deg, #808080 25%, transparent 25%), 
-                            linear-gradient(-45deg, #808080 25%, transparent 25%), 
-                            linear-gradient(45deg, transparent 75%, #808080 75%), 
-                            linear-gradient(-45deg, transparent 75%, #808080 75%);
-          background-size: 20px 20px;
-          background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-        }
-      `}</style>
+      {/* Скрытый Canvas для PNG */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-white/10 max-w-md mx-auto">
+        <div className="flex">
+          <TabButton
+            active={activeTab === 'calligraphy'}
+            onClick={() => setActiveTab('calligraphy')}
+            icon={<CalligraphyIcon />}
+            label="Каллиграфия"
+          />
+          <TabButton
+            active={activeTab === 'fonts'}
+            onClick={() => setActiveTab('fonts')}
+            icon={<FontsIcon />}
+            label="Шрифты"
+          />
+          <TabButton
+            active={activeTab === 'favorites'}
+            onClick={() => setActiveTab('favorites')}
+            icon={<FavoritesIcon />}
+            label="Избранное"
+          />
+        </div>
+      </nav>
     </div>
   );
 };

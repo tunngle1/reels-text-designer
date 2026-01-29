@@ -9,7 +9,7 @@ export interface Font {
   url?: string;
 }
 
-export type Tab = 'all' | 'favorites' | 'upload';
+export type Tab = 'calligraphy' | 'fonts' | 'favorites';
 
 export interface AppState {
   text: string;
