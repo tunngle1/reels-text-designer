@@ -96,11 +96,26 @@ const App: React.FC = () => {
     window.open(href, '_blank');
   };
 
+  const isTelegramWebView = () => {
+    const tg = (window as any).Telegram;
+    if (tg?.WebApp) return true;
+    const ua = navigator.userAgent || '';
+    return ua.toLowerCase().includes('telegram');
+  };
+
   const canCopyStickerToClipboard = () => {
-    return (window as any).isSecureContext &&
+    return (window as any).isSecureContext === true &&
       typeof (window as any).ClipboardItem === 'function' &&
       !!navigator.clipboard &&
       typeof (navigator.clipboard as any).write === 'function';
+  };
+
+  const getCopyBlockReason = () => {
+    if (isTelegramWebView()) return 'TELEGRAM_WEBVIEW';
+    if ((window as any).isSecureContext !== true) return 'NOT_HTTPS';
+    if (typeof (window as any).ClipboardItem !== 'function') return 'NO_CLIPBOARD_ITEM';
+    if (!navigator.clipboard || typeof (navigator.clipboard as any).write !== 'function') return 'NO_CLIPBOARD_WRITE';
+    return null;
   };
 
   const buildStickerPng = async (): Promise<{ blob: Blob; file: File }> => {
@@ -150,15 +165,25 @@ const App: React.FC = () => {
     setIsCopying(true);
 
     try {
-      const { blob } = await buildStickerPng();
-      if (!canCopyStickerToClipboard()) {
-        showMsg(
-          'Чтобы вставить именно как СТИКЕР без фона, нужно копирование PNG в буфер (Paste).\n\n' +
-          'В Telegram WebView на iOS это часто запрещено.\n\n' +
-          'Открой эту страницу в Safari/Chrome (по HTTPS) и попробуй там.'
-        );
+      const reason = getCopyBlockReason();
+      if (reason) {
+        if (reason === 'TELEGRAM_WEBVIEW') {
+          showMsg(
+            'В Telegram WebView iOS копирование PNG в буфер (для вставки как стикер) обычно заблокировано.\n\n' +
+            'Сейчас открою эту же страницу во внешнем браузере (Safari/Chrome) — там шанс вставки как стикер максимальный.'
+          );
+          openInExternalBrowser();
+          return;
+        }
+        if (reason === 'NOT_HTTPS') {
+          showMsg('Для копирования PNG-стикера нужен HTTPS. Открой приложение по https:// и попробуй снова.');
+          return;
+        }
+        showMsg('Этот браузер не поддерживает копирование PNG-изображений в буфер как стикер. Открой в Safari/Chrome и попробуй снова.');
         return;
       }
+
+      const { blob } = await buildStickerPng();
 
       await (navigator.clipboard as any).write([
         new (window as any).ClipboardItem({ 'image/png': blob })
@@ -167,10 +192,21 @@ const App: React.FC = () => {
       showMsg('Стикер скопирован (PNG с прозрачностью). Открой Instagram и вставь из буфера.');
     } catch (e) {
       console.error(e);
+      const err: any = e;
+      const name = String(err?.name || '');
+      const msg = String(err?.message || '');
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        showMsg(
+          'Копирование PNG в буфер заблокировано браузером.\n\n' +
+          'Решение: открой эту страницу во внешнем Safari/Chrome (и по HTTPS), затем нажми «Копировать».\n\n' +
+          `Ошибка: ${name}${msg ? `: ${msg}` : ''}`
+        );
+        return;
+      }
       showMsg(
-        'Не удалось скопировать PNG в буфер.\n\n' +
-        'Для стикера без фона нужен именно буфер обмена, а Telegram/iOS часто блокирует это.\n' +
-        'Попробуй открыть в Safari/Chrome (по HTTPS).'
+        'Не удалось скопировать PNG-стикер в буфер.\n\n' +
+        `Ошибка: ${name}${msg ? `: ${msg}` : ''}\n` +
+        'Попробуй открыть в Safari/Chrome (по HTTPS) и повторить.'
       );
     } finally {
       setIsCopying(false);
