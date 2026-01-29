@@ -115,31 +115,16 @@ const App: React.FC = () => {
       const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
       if (!blob) throw new Error('Blob fail');
 
-      // Пробуем скопировать PNG в буфер напрямую
-      let copied = false;
-      try {
-        if ((window as any).ClipboardItem && navigator.clipboard?.write) {
-          await navigator.clipboard.write([
-            new (window as any).ClipboardItem({ 'image/png': blob })
-          ]);
-          copied = true;
-        }
-      } catch {
-        // Не получилось - тихо продолжаем
-      }
+      const file = new File([blob], 'sticker.png', { type: 'image/png' });
 
-      if (copied) {
-        const tg = (window as any).Telegram;
-        if (tg?.WebApp) {
-          tg.WebApp.HapticFeedback.notificationOccurred('success');
-          tg.WebApp.showAlert('Стикер скопирован! Вставь в Instagram.');
-        } else {
-          alert('Стикер скопирован! Вставь в Instagram.');
-        }
+      // Share API — это то, что работало раньше
+      const nav = navigator as any;
+      if (nav.share && nav.canShare?.({ files: [file] })) {
+        await nav.share({ files: [file] });
         return;
       }
 
-      // Fallback: тихо сохраняем PNG (без окна Share)
+      // Fallback: сохраняем PNG
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -149,9 +134,7 @@ const App: React.FC = () => {
       
       const tg = (window as any).Telegram;
       if (tg?.WebApp) {
-        tg.WebApp.showAlert('PNG сохранён в загрузки. Открой его и отправь в Instagram.');
-      } else {
-        alert('PNG сохранён. Открой его и отправь в Instagram.');
+        tg.WebApp.showAlert('PNG сохранён.');
       }
     } catch (e) {
       console.error(e);
