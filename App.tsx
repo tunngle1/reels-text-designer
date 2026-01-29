@@ -1,34 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Font, Tab } from './types';
-import { STORAGE_KEYS } from './constants';
-import { fetchGoogleFonts, loadGoogleFont, loadGoogleFontsBatch, GoogleFont } from './googleFontsApi';
+import { INITIAL_FONTS, STORAGE_KEYS } from './constants';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('calligraphy');
   const [text, setText] = useState('Привет');
   const [selectedFontId, setSelectedFontId] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [googleFonts, setGoogleFonts] = useState<Font[]>([]);
+  const [myskotomFonts, setMyskotomFonts] = useState<Font[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [visibleCount, setVisibleCount] = useState(40);
   const [fontsReady, setFontsReady] = useState(0);
+  const loadedFontFamiliesRef = useRef<Set<string>>(new Set());
 
   // Загрузка шрифтов
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
       try {
-        const fonts = await fetchGoogleFonts();
-        const converted: Font[] = fonts.map((gf: GoogleFont) => ({
-          id: `g_${gf.family.replace(/\s+/g, '_').toLowerCase()}`,
-          name: gf.family,
-          family: gf.family,
-          source: 'google' as const,
-          subsets: gf.subsets,
-          category: gf.category,
-        }));
-        setGoogleFonts(converted);
+        const res = await fetch('/myskotom-index.json', { cache: 'no-cache' });
+        if (!res.ok) throw new Error(`Failed to load myskotom-index.json: ${res.status}`);
+        const data = await res.json();
+        const items: Font[] = Array.isArray(data?.items) ? data.items : [];
+        setMyskotomFonts(items);
       } catch (e) {
         console.error(e);
       } finally {
@@ -51,31 +46,55 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favorites));
   }, [favorites]);
 
-  // Фильтрация: только с кириллицей
-  const cyrillicFonts = googleFonts.filter(f => {
-    const s = f.subsets || [];
-    return s.includes('cyrillic') || s.includes('cyrillic-ext');
-  });
+  const allFonts = useMemo(() => {
+    return [...INITIAL_FONTS, ...myskotomFonts];
+  }, [myskotomFonts]);
 
-  // Каллиграфия = handwriting с кириллицей
-  const calligraphyFonts = cyrillicFonts.filter(f => f.category === 'handwriting');
-  // Шрифты = остальные с кириллицей
-  const regularFonts = cyrillicFonts.filter(f => f.category !== 'handwriting');
+  const calligraphyFonts = useMemo(() => {
+    // Эвристика: всё, что похоже на рукописные/каллиграфию
+    const want = new Set(['рукописный', 'каллиграфия', 'каллиграфический']);
+    return allFonts.filter((f) => {
+      if (f.source !== 'myskotom') return false;
+      const type = (f.tags?.type || []).join(' ').toLowerCase();
+      const mood = (f.tags?.mood || []).join(' ').toLowerCase();
+      return Array.from(want).some((k) => type.includes(k) || mood.includes(k));
+    });
+  }, [allFonts]);
+
+  const regularFonts = useMemo(() => {
+    const calligraphyIds = new Set(calligraphyFonts.map((f) => f.id));
+    return allFonts.filter((f) => f.source !== 'myskotom' || !calligraphyIds.has(f.id));
+  }, [allFonts, calligraphyFonts]);
 
   const currentList = activeTab === 'calligraphy' ? calligraphyFonts
     : activeTab === 'fonts' ? regularFonts
-    : cyrillicFonts.filter(f => favorites.includes(f.id));
+    : allFonts.filter(f => favorites.includes(f.id));
 
   const displayed = currentList.slice(0, visibleCount);
 
-  // Подгрузка CSS
-  useEffect(() => {
-    if (displayed.length === 0) return;
-    const families = displayed.map(f => f.family);
-    loadGoogleFontsBatch(families, 20).then(() => setFontsReady(n => n + 1));
-  }, [displayed.map(f => f.id).join(',')]);
+  const selectedFont = allFonts.find(f => f.id === selectedFontId);
 
-  const selectedFont = cyrillicFonts.find(f => f.id === selectedFontId);
+  const ensureFontLoaded = async (font: Font) => {
+    if (font.source !== 'myskotom') return;
+    if (!font.tproductUrl) return;
+    if (loadedFontFamiliesRef.current.has(font.family)) return;
+
+    const res = await fetch(`/api/font?tproduct=${encodeURIComponent(font.tproductUrl)}`);
+    if (!res.ok) throw new Error(`Failed to download font: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    try {
+      const face = new FontFace(font.family, `url(${url})`);
+      await face.load();
+      (document as any).fonts.add(face);
+      loadedFontFamiliesRef.current.add(font.family);
+      setFontsReady((n) => n + 1);
+    } finally {
+      // keep object URL alive briefly; FontFace should have loaded the data
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    }
+  };
 
   const showMsg = (message: string) => {
     const tg = (window as any).Telegram;
@@ -121,8 +140,8 @@ const App: React.FC = () => {
   const buildStickerPng = async (): Promise<{ blob: Blob; file: File }> => {
     if (!selectedFont) throw new Error('No font selected');
 
-    await loadGoogleFont(selectedFont.family);
-    await new Promise(r => setTimeout(r, 100));
+    await ensureFontLoaded(selectedFont);
+    await new Promise(r => setTimeout(r, 50));
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -345,7 +364,7 @@ const App: React.FC = () => {
                   key={font.id}
                   onClick={() => {
                     setSelectedFontId(font.id);
-                    loadGoogleFont(font.family);
+                    ensureFontLoaded(font).catch(() => {});
                   }}
                   className={`p-4 rounded-2xl cursor-pointer border ${
                     selectedFontId === font.id
