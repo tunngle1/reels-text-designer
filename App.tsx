@@ -137,6 +137,33 @@ const App: React.FC = () => {
   const [onlyCyrillic, setOnlyCyrillic] = useState(true);
   const [isCopying, setIsCopying] = useState(false);
 
+  const getClipboardDiagnostics = async () => {
+    const navAny = navigator as any;
+    const supportsClipboard = !!navigator.clipboard;
+    const supportsWrite = supportsClipboard && typeof navAny?.clipboard?.write === 'function';
+    const supportsClipboardItem = typeof (window as any).ClipboardItem === 'function';
+    const secure = (window as any).isSecureContext === true;
+
+    let permission: string | undefined;
+    try {
+      if (navAny?.permissions?.query) {
+        const res = await navAny.permissions.query({ name: 'clipboard-write' });
+        permission = res?.state;
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      secure,
+      supportsClipboard,
+      supportsWrite,
+      supportsClipboardItem,
+      permission,
+      userAgent: navigator.userAgent,
+    };
+  };
+
   // Загрузка данных
   useEffect(() => {
     const savedFavorites = localStorage.getItem(STORAGE_KEYS.FAVORITES);
@@ -302,29 +329,55 @@ const App: React.FC = () => {
       if (!blob) throw new Error('Failed to create blob');
 
       // Только копирование в буфер (как стикер)
-      const canCopy = (window as any).isSecureContext &&
-        navigator.clipboard &&
-        typeof (navigator.clipboard as any).write === 'function' &&
-        typeof (window as any).ClipboardItem === 'function';
-
+      const diag = await getClipboardDiagnostics();
+      const canCopy = diag.secure && diag.supportsClipboard && diag.supportsWrite && diag.supportsClipboardItem;
       if (!canCopy) {
-        throw new Error('ClipboardImageNotSupported');
+        throw new Error(`ClipboardImageNotSupported: secure=${diag.secure} clipboard=${diag.supportsClipboard} write=${diag.supportsWrite} item=${diag.supportsClipboardItem} perm=${diag.permission ?? 'unknown'}`);
       }
 
-      await (navigator.clipboard as any).write([
-        new (window as any).ClipboardItem({ 'image/png': blob })
-      ]);
+      // В некоторых окружениях (iOS/WebView) важно, чтобы это происходило строго в рамках user gesture.
+      // Здесь вызов идёт из onClick, так что ок.
+      await (navigator.clipboard as any).write([new (window as any).ClipboardItem({ 'image/png': blob })]);
 
       showSuccess('Стикер скопирован! Открой Instagram и вставь.');
 
     } catch (err) {
       console.error('Copy as sticker failed:', err);
-      const msg = String((err as any)?.message || '');
+      const eAny = err as any;
+      const msg = String(eAny?.message || '');
+      const name = String(eAny?.name || '');
+      const diag = await getClipboardDiagnostics().catch(() => null);
+
       if (msg.includes('ClipboardImageNotSupported')) {
-        alert('Этот браузер не позволяет копировать PNG в буфер обмена. Открой приложение в Chrome/Safari по HTTPS (или внутри Telegram, если там доступно), иначе Instagram не вставит шрифт как стикер.');
-      } else {
-        alert('Не удалось скопировать стикер. Попробуйте ещё раз.');
+        alert(
+          'Не получается копировать PNG как стикер в буфер обмена.\n\n' +
+          'Чаще всего причина:\n' +
+          '- страница не в HTTPS\n' +
+          '- браузер/WebView не поддерживает clipboard.write для изображений\n' +
+          '- запрет разрешения clipboard-write\n\n' +
+          `Диагностика: ${msg}`
+        );
+        return;
       }
+
+      // NotAllowedError / SecurityError — типично для iOS Safari / Telegram WebView / не-HTTPS
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        alert(
+          'Копирование заблокировано браузером (нет разрешения).\n\n' +
+          'Проверь: \n' +
+          '- Открыто по HTTPS\n' +
+          '- Нажимаешь кнопку вручную (не автокопирование)\n' +
+          '- Если это Telegram WebView / iOS — там часто нельзя копировать PNG в буфер\n\n' +
+          `Ошибка: ${name}${msg ? `: ${msg}` : ''}`
+        );
+        return;
+      }
+
+      alert(
+        'Не удалось скопировать стикер.\n\n' +
+        `Ошибка: ${name}${msg ? `: ${msg}` : ''}` +
+        (diag ? `\n\nПроверка: https=${diag.secure} clipboard=${diag.supportsClipboard} write=${diag.supportsWrite} ClipboardItem=${diag.supportsClipboardItem} perm=${diag.permission ?? 'unknown'}` : '')
+      );
     } finally {
       setIsCopying(false);
     }
