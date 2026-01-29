@@ -9,6 +9,13 @@ const App: React.FC = () => {
   const [lineHeight, setLineHeight] = useState(1.2);
   const [letterSpacing, setLetterSpacing] = useState(0);
   const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('center');
+  const [textColor, setTextColor] = useState('#FFFFFF');
+  const [strokeColor, setStrokeColor] = useState('#000000');
+  const [strokeWidth, setStrokeWidth] = useState(0);
+  const [shadowColor, setShadowColor] = useState('#000000');
+  const [shadowBlur, setShadowBlur] = useState(0);
+  const [shadowOffsetX, setShadowOffsetX] = useState(0);
+  const [shadowOffsetY, setShadowOffsetY] = useState(2);
   const [selectedFontId, setSelectedFontId] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [myskotomFonts, setMyskotomFonts] = useState<Font[]>([]);
@@ -193,10 +200,12 @@ const App: React.FC = () => {
     return null;
   };
 
-  const drawTextWithLetterSpacing = (ctx: CanvasRenderingContext2D, line: string, x: number, y: number, spacingPx: number) => {
+  const drawTextWithLetterSpacing = (ctx: CanvasRenderingContext2D, line: string, x: number, y: number, spacingPx: number, stroke = false) => {
     if (!line) return;
+    const drawFn = stroke ? (t: string, px: number, py: number) => ctx.strokeText(t, px, py) : (t: string, px: number, py: number) => ctx.fillText(t, px, py);
+
     if (!spacingPx) {
-      ctx.fillText(line, x, y);
+      drawFn(line, x, y);
       return;
     }
 
@@ -213,7 +222,7 @@ const App: React.FC = () => {
 
     let cur = startX;
     for (let i = 0; i < chars.length; i++) {
-      ctx.fillText(chars[i], cur, y);
+      drawFn(chars[i], cur, y);
       cur += widths[i] + spacingPx;
     }
 
@@ -254,14 +263,33 @@ const App: React.FC = () => {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = textColor;
     ctx.textAlign = textAlign;
     ctx.textBaseline = 'top';
 
+    // Тень
+    if (shadowBlur > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0) {
+      ctx.shadowColor = shadowColor;
+      ctx.shadowBlur = shadowBlur;
+      ctx.shadowOffsetX = shadowOffsetX;
+      ctx.shadowOffsetY = shadowOffsetY;
+    }
+
     const anchorX = textAlign === 'left' ? padding : textAlign === 'right' ? (canvas.width - padding) : (canvas.width / 2);
 
+    // Обводка (рисуем сначала, потом заливку поверх)
+    if (strokeWidth > 0) {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokeWidth;
+      ctx.lineJoin = 'round';
+      for (let i = 0; i < lines.length; i++) {
+        drawTextWithLetterSpacing(ctx, lines[i], anchorX, padding + i * lineHeightPx, letterSpacing, true);
+      }
+    }
+
+    // Заливка
     for (let i = 0; i < lines.length; i++) {
-      drawTextWithLetterSpacing(ctx, lines[i], anchorX, padding + i * lineHeightPx, letterSpacing);
+      drawTextWithLetterSpacing(ctx, lines[i], anchorX, padding + i * lineHeightPx, letterSpacing, false);
     }
 
     const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
@@ -425,6 +453,85 @@ const App: React.FC = () => {
               </select>
             </label>
           </div>
+
+          {/* Цвет, обводка, тень */}
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <label className="text-xs text-gray-300">
+              Цвет текста
+              <input
+                type="color"
+                value={textColor}
+                onChange={(e) => setTextColor(e.target.value)}
+                className="w-full h-8 mt-1 rounded cursor-pointer"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Цвет обводки
+              <input
+                type="color"
+                value={strokeColor}
+                onChange={(e) => setStrokeColor(e.target.value)}
+                className="w-full h-8 mt-1 rounded cursor-pointer"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Обводка: {strokeWidth}px
+              <input
+                type="range"
+                min={0}
+                max={8}
+                step={1}
+                value={strokeWidth}
+                onChange={(e) => setStrokeWidth(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Цвет тени
+              <input
+                type="color"
+                value={shadowColor}
+                onChange={(e) => setShadowColor(e.target.value)}
+                className="w-full h-8 mt-1 rounded cursor-pointer"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Тень blur: {shadowBlur}px
+              <input
+                type="range"
+                min={0}
+                max={20}
+                step={1}
+                value={shadowBlur}
+                onChange={(e) => setShadowBlur(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Тень X: {shadowOffsetX}px
+              <input
+                type="range"
+                min={-10}
+                max={10}
+                step={1}
+                value={shadowOffsetX}
+                onChange={(e) => setShadowOffsetX(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+            <label className="text-xs text-gray-300 col-span-2">
+              Тень Y: {shadowOffsetY}px
+              <input
+                type="range"
+                min={-10}
+                max={10}
+                step={1}
+                value={shadowOffsetY}
+                onChange={(e) => setShadowOffsetY(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+          </div>
         </div>
       </div>
 
@@ -442,29 +549,23 @@ const App: React.FC = () => {
               letterSpacing: `${letterSpacing}px`,
               textAlign,
               whiteSpace: 'pre-wrap',
+              color: textColor,
+              WebkitTextStroke: strokeWidth > 0 ? `${strokeWidth}px ${strokeColor}` : undefined,
+              textShadow: (shadowBlur > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0)
+                ? `${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px ${shadowColor}`
+                : undefined,
             }}
           >
             {text || 'Выбери шрифт'}
           </div>
         </div>
 
-        {/* Две кнопки как раньше: Копировать / Поделиться */}
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <button
-            onClick={copySticker}
-            disabled={!selectedFont || isCopying}
-            className={`py-4 rounded-2xl font-bold text-base ${
-              selectedFont && !isCopying
-                ? 'bg-white/10 border border-white/20 text-white'
-                : 'bg-gray-700 text-gray-400'
-            }`}
-          >
-            {isCopying ? '...' : 'Копировать'}
-          </button>
+        {/* Кнопка Поделиться */}
+        <div className="mt-4">
           <button
             onClick={shareSticker}
             disabled={!selectedFont || isCopying}
-            className={`py-4 rounded-2xl font-bold text-base ${
+            className={`w-full py-4 rounded-2xl font-bold text-base ${
               selectedFont && !isCopying
                 ? 'bg-gradient-to-r from-purple-600 to-pink-600'
                 : 'bg-gray-700 text-gray-400'
@@ -473,16 +574,6 @@ const App: React.FC = () => {
             {isCopying ? '...' : 'Поделиться'}
           </button>
         </div>
-
-        {/* Помощь для Telegram WebView/iOS */}
-        {!canCopyStickerToClipboard() && (
-          <button
-            onClick={openInExternalBrowser}
-            className="w-full mt-3 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm text-gray-200"
-          >
-            Открыть в Safari/Chrome для копирования стикера
-          </button>
-        )}
       </div>
 
       {/* Вкладки */}
