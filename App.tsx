@@ -77,49 +77,116 @@ const App: React.FC = () => {
 
   const selectedFont = cyrillicFonts.find(f => f.id === selectedFontId);
 
-  // ========== КОПИРОВАНИЕ СТИКЕРА ==========
+  const showMsg = (message: string) => {
+    const tg = (window as any).Telegram;
+    if (tg?.WebApp) {
+      tg.WebApp.showAlert(message);
+      return;
+    }
+    alert(message);
+  };
+
+  const openInExternalBrowser = () => {
+    const tg = (window as any).Telegram;
+    const href = window.location.href;
+    if (tg?.WebApp?.openLink) {
+      tg.WebApp.openLink(href);
+      return;
+    }
+    window.open(href, '_blank');
+  };
+
+  const canCopyStickerToClipboard = () => {
+    return (window as any).isSecureContext &&
+      typeof (window as any).ClipboardItem === 'function' &&
+      !!navigator.clipboard &&
+      typeof (navigator.clipboard as any).write === 'function';
+  };
+
+  const buildStickerPng = async (): Promise<{ blob: Blob; file: File }> => {
+    if (!selectedFont) throw new Error('No font selected');
+
+    await loadGoogleFont(selectedFont.family);
+    await new Promise(r => setTimeout(r, 100));
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas unsupported');
+
+    const fontSize = 72;
+    const padding = 30;
+
+    ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
+    const lines = text.split('\n');
+    let maxW = 0;
+    for (const line of lines) {
+      const w = ctx.measureText(line).width;
+      if (w > maxW) maxW = w;
+    }
+
+    canvas.width = Math.max(200, Math.ceil(maxW + padding * 2));
+    canvas.height = Math.max(120, Math.ceil(lines.length * fontSize * 1.3 + padding * 2));
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], canvas.width / 2, padding + i * fontSize * 1.3);
+    }
+
+    const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('Blob fail');
+
+    const file = new File([blob], 'sticker.png', { type: 'image/png' });
+    return { blob, file };
+  };
+
+  // Кнопка 1: КОПИРОВАТЬ (PNG в буфер). На iOS/Telegram это может быть запрещено или “успешно”, но фактически не вставляться.
   const copySticker = async () => {
     if (!selectedFont || isCopying || !text.trim()) return;
     setIsCopying(true);
 
     try {
-      await loadGoogleFont(selectedFont.family);
-      await new Promise(r => setTimeout(r, 100));
-
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d')!;
-      const fontSize = 72;
-      const padding = 30;
-
-      ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
-      const lines = text.split('\n');
-      let maxW = 0;
-      for (const line of lines) {
-        const w = ctx.measureText(line).width;
-        if (w > maxW) maxW = w;
+      const { blob } = await buildStickerPng();
+      if (!canCopyStickerToClipboard()) {
+        showMsg(
+          'Чтобы вставить именно как СТИКЕР без фона, нужно копирование PNG в буфер (Paste).\n\n' +
+          'В Telegram WebView на iOS это часто запрещено.\n\n' +
+          'Открой эту страницу в Safari/Chrome (по HTTPS) и попробуй там.'
+        );
+        return;
       }
 
-      canvas.width = Math.ceil(maxW + padding * 2);
-      canvas.height = Math.ceil(lines.length * fontSize * 1.3 + padding * 2);
+      await (navigator.clipboard as any).write([
+        new (window as any).ClipboardItem({ 'image/png': blob })
+      ]);
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
-      ctx.fillStyle = '#FFFFFF';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      showMsg('Стикер скопирован (PNG с прозрачностью). Открой Instagram и вставь из буфера.');
+    } catch (e) {
+      console.error(e);
+      showMsg(
+        'Не удалось скопировать PNG в буфер.\n\n' +
+        'Для стикера без фона нужен именно буфер обмена, а Telegram/iOS часто блокирует это.\n' +
+        'Попробуй открыть в Safari/Chrome (по HTTPS).'
+      );
+    } finally {
+      setIsCopying(false);
+    }
+  };
 
-      for (let i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[i], canvas.width / 2, padding + i * fontSize * 1.3);
-      }
+  // Кнопка 2: ПОДЕЛИТЬСЯ (самый стабильный путь на iOS/Telegram)
+  const shareSticker = async () => {
+    if (!selectedFont || isCopying || !text.trim()) return;
+    setIsCopying(true);
 
-      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
-      if (!blob) throw new Error('Blob fail');
-
-      const file = new File([blob], 'sticker.png', { type: 'image/png' });
-
-      // Share API — это то, что работало раньше
+    try {
+      const { blob, file } = await buildStickerPng();
       const nav = navigator as any;
-      if (nav.share && nav.canShare?.({ files: [file] })) {
+
+      if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
         await nav.share({ files: [file] });
         return;
       }
@@ -131,14 +198,10 @@ const App: React.FC = () => {
       a.download = 'sticker.png';
       a.click();
       URL.revokeObjectURL(url);
-      
-      const tg = (window as any).Telegram;
-      if (tg?.WebApp) {
-        tg.WebApp.showAlert('PNG сохранён.');
-      }
+      showMsg('PNG сохранён. Открой его и отправь в Instagram.');
     } catch (e) {
       console.error(e);
-      alert('Ошибка: ' + (e as any)?.message);
+      showMsg('Не удалось создать PNG. Попробуй ещё раз.');
     } finally {
       setIsCopying(false);
     }
@@ -177,18 +240,41 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Кнопка копирования */}
-        <button
-          onClick={copySticker}
-          disabled={!selectedFont || isCopying}
-          className={`w-full mt-4 py-4 rounded-2xl font-bold text-lg ${
-            selectedFont && !isCopying
-              ? 'bg-gradient-to-r from-purple-600 to-pink-600'
-              : 'bg-gray-700 text-gray-400'
-          }`}
-        >
-          {isCopying ? 'Создаю...' : 'Скопировать стикер'}
-        </button>
+        {/* Две кнопки как раньше: Копировать / Поделиться */}
+        <div className="grid grid-cols-2 gap-3 mt-4">
+          <button
+            onClick={copySticker}
+            disabled={!selectedFont || isCopying}
+            className={`py-4 rounded-2xl font-bold text-base ${
+              selectedFont && !isCopying
+                ? 'bg-white/10 border border-white/20 text-white'
+                : 'bg-gray-700 text-gray-400'
+            }`}
+          >
+            {isCopying ? '...' : 'Копировать'}
+          </button>
+          <button
+            onClick={shareSticker}
+            disabled={!selectedFont || isCopying}
+            className={`py-4 rounded-2xl font-bold text-base ${
+              selectedFont && !isCopying
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600'
+                : 'bg-gray-700 text-gray-400'
+            }`}
+          >
+            {isCopying ? '...' : 'Поделиться'}
+          </button>
+        </div>
+
+        {/* Помощь для Telegram WebView/iOS */}
+        {!canCopyStickerToClipboard() && (
+          <button
+            onClick={openInExternalBrowser}
+            className="w-full mt-3 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm text-gray-200"
+          >
+            Открыть в Safari/Chrome для копирования стикера
+          </button>
+        )}
       </div>
 
       {/* Вкладки */}
