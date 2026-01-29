@@ -4,7 +4,7 @@ import { INITIAL_FONTS, STORAGE_KEYS } from './constants';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('calligraphy');
-  const [text, setText] = useState('Привет');
+  const [text, setText] = useState('малышка, сюда текст');
   const [fontSize, setFontSize] = useState(48);
   const [lineHeight, setLineHeight] = useState(1.2);
   const [letterSpacing, setLetterSpacing] = useState(0);
@@ -301,7 +301,7 @@ const App: React.FC = () => {
         new (window as any).ClipboardItem({ 'image/png': blob })
       ]);
 
-      showMsg('Стикер скопирован (PNG с прозрачностью). Открой Instagram и вставь из буфера.');
+      showMsg('Молодец ❤️');
     } catch (e) {
       console.error(e);
       const err: any = e;
