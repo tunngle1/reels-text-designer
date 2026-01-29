@@ -32,6 +32,7 @@ const App: React.FC = () => {
   const [fontWeight, setFontWeight] = useState(600);
   const [letterSpacing, setLetterSpacing] = useState(0);
   const [lineHeight, setLineHeight] = useState(1.2);
+  const [unicodeStyle, setUnicodeStyle] = useState<'normal' | 'bold' | 'italic' | 'script' | 'fraktur' | 'double' | 'mono' | 'fullwidth'>('normal');
   const [textColor, setTextColor] = useState('#FFFFFF');
   const [selectedFontId, setSelectedFontId] = useState('montserrat');
   const [onlyCyrillic, setOnlyCyrillic] = useState(true);
@@ -254,6 +255,84 @@ const App: React.FC = () => {
     }
   };
 
+  const transformTextToUnicodeStyle = useCallback((input: string) => {
+    const mapRange = (ch: string, upperBase: number, lowerBase: number, digitBase?: number) => {
+      const code = ch.codePointAt(0);
+      if (!code) return ch;
+      if (code >= 65 && code <= 90) return String.fromCodePoint(upperBase + (code - 65));
+      if (code >= 97 && code <= 122) return String.fromCodePoint(lowerBase + (code - 97));
+      if (digitBase !== undefined && code >= 48 && code <= 57) return String.fromCodePoint(digitBase + (code - 48));
+      return ch;
+    };
+
+    const toFullwidth = (ch: string) => {
+      const code = ch.codePointAt(0);
+      if (!code) return ch;
+      if (code === 32) return String.fromCodePoint(0x3000);
+      if (code >= 33 && code <= 126) return String.fromCodePoint(0xFF01 + (code - 33));
+      return ch;
+    };
+
+    const convertChar = (ch: string) => {
+      switch (unicodeStyle) {
+        case 'bold':
+          return mapRange(ch, 0x1D400, 0x1D41A, 0x1D7CE);
+        case 'italic':
+          return mapRange(ch, 0x1D434, 0x1D44E);
+        case 'script':
+          return mapRange(ch, 0x1D49C, 0x1D4B6);
+        case 'fraktur':
+          return mapRange(ch, 0x1D504, 0x1D51E);
+        case 'double':
+          return mapRange(ch, 0x1D538, 0x1D552, 0x1D7D8);
+        case 'mono':
+          return mapRange(ch, 0x1D670, 0x1D68A, 0x1D7F6);
+        case 'fullwidth':
+          return toFullwidth(ch);
+        case 'normal':
+        default:
+          return ch;
+      }
+    };
+
+    return Array.from(input).map(convertChar).join('');
+  }, [unicodeStyle]);
+
+  const unicodeStyledText = transformTextToUnicodeStyle(text);
+
+  const copyUnicodeText = async () => {
+    try {
+      const canUseClipboardApi = typeof navigator !== 'undefined' && !!navigator.clipboard && (window as any).isSecureContext;
+      if (canUseClipboardApi) {
+        await navigator.clipboard.writeText(unicodeStyledText);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = unicodeStyledText;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!ok) throw new Error('execCommand(copy) failed');
+      }
+
+      const tg = (window as any).Telegram;
+      if (tg?.WebApp) {
+        tg.WebApp.HapticFeedback.notificationOccurred('success');
+        tg.WebApp.showAlert('Стилизованный текст скопирован!');
+      } else {
+        alert('Стилизованный текст скопирован!');
+      }
+    } catch (err) {
+      alert('Не удалось скопировать текст');
+    }
+  };
+
   const downloadImage = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -435,6 +514,32 @@ const App: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Стиль текста</label>
+            <select
+              value={unicodeStyle}
+              onChange={(e) => setUnicodeStyle(e.target.value as any)}
+              className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[var(--tg-theme-bg-color)] outline-none"
+            >
+              <option value="normal">Обычный</option>
+              <option value="bold">Bold</option>
+              <option value="italic">Italic</option>
+              <option value="script">Script</option>
+              <option value="fraktur">Fraktur</option>
+              <option value="double">Double</option>
+              <option value="mono">Mono</option>
+              <option value="fullwidth">Fullwidth</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Превью</label>
+            <div className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[var(--tg-theme-bg-color)] text-sm truncate">
+              {unicodeStyledText || '—'}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <button
             onClick={copyText}
             className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
@@ -444,6 +549,16 @@ const App: React.FC = () => {
               <path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-4.586l1.293-1.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L10.414 13H15v3a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM15 11h2a1 1 0 110 2h-2v-2z" />
             </svg>
             Копировать текст
+          </button>
+          <button
+            onClick={copyUnicodeText}
+            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+              <path d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" />
+            </svg>
+            Текст для IG
           </button>
           <button
             onClick={copyToClipboard}
