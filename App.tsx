@@ -15,7 +15,7 @@ const App: React.FC = () => {
   const [shadowColor, setShadowColor] = useState('#000000');
   const [shadowBlur, setShadowBlur] = useState(0);
   const [shadowOffsetX, setShadowOffsetX] = useState(0);
-  const [shadowOffsetY, setShadowOffsetY] = useState(2);
+  const [shadowOffsetY, setShadowOffsetY] = useState(0);
   const [selectedFontId, setSelectedFontId] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [myskotomFonts, setMyskotomFonts] = useState<Font[]>([]);
@@ -128,9 +128,8 @@ const App: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const candidates = displayed
-      .filter((f) => f.source === 'myskotom' && !!f.tproductUrl)
-      .slice(0, 8);
+    const candidates = currentList
+      .filter((f) => f.source === 'myskotom' && !!f.tproductUrl);
 
     const concurrency = 3;
     let idx = 0;
@@ -241,6 +240,7 @@ const App: React.FC = () => {
 
     const padding = 30;
     const lineHeightPx = Math.max(1, fontSize * lineHeight);
+    const scale = window.devicePixelRatio || 2;
 
     ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
     ctx.textAlign = textAlign;
@@ -258,10 +258,15 @@ const App: React.FC = () => {
       if (w > maxW) maxW = w;
     }
 
-    canvas.width = Math.max(200, Math.ceil(maxW + padding * 2));
-    canvas.height = Math.max(120, Math.ceil(lines.length * lineHeightPx + padding * 2));
+    const baseWidth = Math.max(200, Math.ceil(maxW + padding * 2));
+    const baseHeight = Math.max(120, Math.ceil(lines.length * lineHeightPx + padding * 2));
+    canvas.width = baseWidth * scale;
+    canvas.height = baseHeight * scale;
+    canvas.style.width = `${baseWidth}px`;
+    canvas.style.height = `${baseHeight}px`;
+    ctx.scale(scale, scale);
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, baseWidth, baseHeight);
     ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
     ctx.fillStyle = textColor;
     ctx.textAlign = textAlign;
@@ -275,7 +280,7 @@ const App: React.FC = () => {
       ctx.shadowOffsetY = shadowOffsetY;
     }
 
-    const anchorX = textAlign === 'left' ? padding : textAlign === 'right' ? (canvas.width - padding) : (canvas.width / 2);
+    const anchorX = textAlign === 'left' ? padding : textAlign === 'right' ? (baseWidth - padding) : (baseWidth / 2);
 
     // Обводка (рисуем сначала, потом заливку поверх)
     if (strokeWidth > 0) {
