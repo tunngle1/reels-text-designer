@@ -66,7 +66,8 @@ export const loadGoogleFontsBatch = (fontFamilies: string[], perRequest: number 
     const chunk = unique.slice(i, i + perRequest);
     const familyParams = chunk
       .map(f => {
-        const family = `${encodeURIComponent(f).replace(/%20/g, '+')}:wght@100;200;300;400;500;600;700;800;900`;
+        // Для превью подгружаем только базовый вес, иначе стартовая загрузка становится слишком тяжёлой
+        const family = `${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400`;
         return `family=${family}`;
       })
       .join('&');
