@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Font, Tab, AppState } from './types';
 import { INITIAL_FONTS, STORAGE_KEYS } from './constants';
-import { fetchGoogleFonts, loadGoogleFont, GoogleFont } from './googleFontsApi';
+import { fetchGoogleFonts, loadGoogleFont, loadGoogleFontsBatch, GoogleFont } from './googleFontsApi';
 
 // Вспомогательные компоненты
 const Header: React.FC = () => (
@@ -223,7 +223,24 @@ const App: React.FC = () => {
 
   const copyText = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      const canUseClipboardApi = typeof navigator !== 'undefined' && !!navigator.clipboard && (window as any).isSecureContext;
+      if (canUseClipboardApi) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!ok) throw new Error('execCommand(copy) failed');
+      }
       const tg = (window as any).Telegram;
       if (tg?.WebApp) {
         tg.WebApp.HapticFeedback.notificationOccurred('success');
@@ -243,6 +260,14 @@ const App: React.FC = () => {
       : [];
 
   const displayedFonts = activeTab === 'upload' ? filteredFonts : filteredFonts.slice(0, visibleFontsCount);
+
+  useEffect(() => {
+    if (activeTab === 'upload') return;
+    const families = displayedFonts
+      .filter(f => f.source === 'google')
+      .map(f => f.family);
+    loadGoogleFontsBatch(families, 25);
+  }, [activeTab, displayedFonts]);
 
   const handleListScroll = useCallback(() => {
     const el = listRef.current;
@@ -365,47 +390,54 @@ const App: React.FC = () => {
         ) : filteredFonts.length === 0 ? (
           <p className="text-center text-gray-400 py-10">Список пуст</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {displayedFonts.map(font => (
-              <div 
-                key={font.id}
-                onClick={() => {
-                  setSelectedFontId(font.id);
-                  // Загружаем шрифт при выборе
-                  if (font.source === 'google') {
-                    loadGoogleFont(font.family);
-                  }
-                }}
-                className={`p-3 rounded-2xl border-2 transition-all flex flex-col cursor-pointer ${
-                  selectedFontId === font.id 
-                    ? 'border-[var(--tg-theme-button-color)] bg-[var(--tg-theme-button-color)] bg-opacity-5' 
-                    : 'border-transparent bg-[var(--tg-theme-secondary-bg-color)]'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] uppercase tracking-widest text-gray-400">{font.source}</span>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite(font.id);
-                    }}
-                    className={`p-1 rounded-full transition-colors ${
-                      favorites.includes(font.id) ? 'text-red-500' : 'text-gray-300'
-                    }`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={favorites.includes(font.id) ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
-                  </button>
-                </div>
-                <span 
-                  className="text-base truncate"
-                  style={{ fontFamily: font.family }}
+          <div>
+            <div className="text-[11px] text-gray-400 mb-3 text-center">
+              Показано {Math.min(displayedFonts.length, filteredFonts.length)} из {filteredFonts.length}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {displayedFonts.map(font => (
+                <div 
+                  key={font.id}
+                  onClick={() => {
+                    setSelectedFontId(font.id);
+                    if (font.source === 'google') {
+                      loadGoogleFont(font.family);
+                    }
+                  }}
+                  className={`p-3 rounded-2xl border-2 transition-all flex flex-col cursor-pointer ${
+                    selectedFontId === font.id 
+                      ? 'border-[var(--tg-theme-button-color)] bg-[var(--tg-theme-button-color)] bg-opacity-5' 
+                      : 'border-transparent bg-[var(--tg-theme-secondary-bg-color)]'
+                  }`}
                 >
-                  {text || font.name}
-                </span>
-              </div>
-            ))}
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[10px] font-medium text-gray-500 truncate">{font.name}</span>
+                      <span className="text-[9px] uppercase tracking-widest text-gray-300">{font.source}</span>
+                    </div>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(font.id);
+                      }}
+                      className={`p-1 rounded-full transition-colors ${
+                        favorites.includes(font.id) ? 'text-red-500' : 'text-gray-300'
+                      }`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={favorites.includes(font.id) ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <span 
+                    className="text-base truncate"
+                    style={{ fontFamily: font.family }}
+                  >
+                    {text || font.name}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
