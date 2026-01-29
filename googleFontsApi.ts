@@ -9,9 +9,9 @@ export interface GoogleFontsResponse {
   items: GoogleFont[];
 }
 
-const API_KEY = process.env.GOOGLE_FONTS_API_KEY;
+const API_KEY = import.meta.env.VITE_GOOGLE_FONTS_API_KEY;
 
-export const fetchGoogleFonts = async (limit: number = 100): Promise<GoogleFont[]> => {
+export const fetchGoogleFonts = async (limit?: number): Promise<GoogleFont[]> => {
   if (!API_KEY) {
     console.error('Google Fonts API key not found');
     return [];
@@ -27,7 +27,10 @@ export const fetchGoogleFonts = async (limit: number = 100): Promise<GoogleFont[
     }
     
     const data: GoogleFontsResponse = await response.json();
-    return data.items.slice(0, limit);
+    if (typeof limit === 'number' && Number.isFinite(limit)) {
+      return data.items.slice(0, limit);
+    }
+    return data.items;
   } catch (error) {
     console.error('Error fetching Google Fonts:', error);
     return [];

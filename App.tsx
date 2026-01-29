@@ -35,7 +35,9 @@ const App: React.FC = () => {
   const [customFonts, setCustomFonts] = useState<Font[]>([]);
   const [googleFonts, setGoogleFonts] = useState<Font[]>([]);
   const [isLoadingFonts, setIsLoadingFonts] = useState(false);
+  const [visibleFontsCount, setVisibleFontsCount] = useState(80);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   // Инициализация данных из localStorage
   useEffect(() => {
@@ -69,7 +71,7 @@ const App: React.FC = () => {
     const loadFonts = async () => {
       setIsLoadingFonts(true);
       try {
-        const fonts = await fetchGoogleFonts(50);
+        const fonts = await fetchGoogleFonts();
         const convertedFonts: Font[] = fonts.map((gf: GoogleFont) => ({
           id: `google_${gf.family.replace(/\s+/g, '_').toLowerCase()}`,
           name: gf.family,
@@ -87,6 +89,10 @@ const App: React.FC = () => {
     };
     loadFonts();
   }, []);
+
+  useEffect(() => {
+    setVisibleFontsCount(80);
+  }, [activeTab]);
 
   // Сохранение избранного
   useEffect(() => {
@@ -236,6 +242,20 @@ const App: React.FC = () => {
       ? allFonts.filter(f => favorites.includes(f.id))
       : [];
 
+  const displayedFonts = activeTab === 'upload' ? filteredFonts : filteredFonts.slice(0, visibleFontsCount);
+
+  const handleListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    if (activeTab === 'upload') return;
+
+    const thresholdPx = 250;
+    const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - thresholdPx;
+    if (isNearBottom) {
+      setVisibleFontsCount(prev => Math.min(prev + 80, filteredFonts.length));
+    }
+  }, [activeTab, filteredFonts.length]);
+
   return (
     <div className="flex flex-col min-h-screen max-w-md mx-auto">
       <Header />
@@ -331,7 +351,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Font List */}
-      <div className="flex-1 overflow-y-auto p-4 pb-24">
+      <div ref={listRef} onScroll={handleListScroll} className="flex-1 overflow-y-auto p-4 pb-24">
         {activeTab === 'upload' ? (
           <div className="text-center p-8 border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-3xl">
             <p className="text-sm text-gray-500 mb-4">Вы можете загрузить свои шрифты формата .ttf или .otf</p>
@@ -340,11 +360,13 @@ const App: React.FC = () => {
               <input type="file" accept=".ttf,.otf" className="hidden" onChange={handleFileUpload} />
             </label>
           </div>
+        ) : activeTab === 'all' && isLoadingFonts ? (
+          <p className="text-center text-gray-400 py-10">Загружаю шрифты…</p>
         ) : filteredFonts.length === 0 ? (
           <p className="text-center text-gray-400 py-10">Список пуст</p>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            {filteredFonts.map(font => (
+            {displayedFonts.map(font => (
               <div 
                 key={font.id}
                 onClick={() => {
