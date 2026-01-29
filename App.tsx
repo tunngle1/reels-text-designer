@@ -233,6 +233,17 @@ const App: React.FC = () => {
     if (!canvas) return;
 
     try {
+      const canUseImageClipboard =
+        typeof window !== 'undefined' &&
+        (window as any).isSecureContext &&
+        typeof (window as any).ClipboardItem !== 'undefined' &&
+        !!navigator.clipboard?.write;
+
+      if (!canUseImageClipboard) {
+        await shareImage();
+        return;
+      }
+
       canvas.toBlob(async (blob) => {
         if (!blob) return;
         try {
@@ -253,6 +264,32 @@ const App: React.FC = () => {
     } catch (err) {
       downloadImage();
     }
+  };
+
+  const shareImage = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) {
+      downloadImage();
+      return;
+    }
+
+    const file = new File([blob], `reels-text-${Date.now()}.png`, { type: 'image/png' });
+
+    try {
+      const navAny = navigator as any;
+      const canShareFiles = typeof navAny.share === 'function' && (!navAny.canShare || navAny.canShare({ files: [file] }));
+      if (canShareFiles) {
+        await navAny.share({ files: [file], title: 'Reels Text', text: 'PNG' });
+        return;
+      }
+    } catch (e) {
+      // ignore and fallback to download
+    }
+
+    downloadImage();
   };
 
   const transformTextToUnicodeStyle = useCallback((input: string) => {
@@ -561,6 +598,15 @@ const App: React.FC = () => {
             Текст для IG
           </button>
           <button
+            onClick={shareImage}
+            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M15 8a3 3 0 00-2.977 2.65l-3.36 1.68a3 3 0 10.038 1.7l3.323-1.66A3 3 0 1015 8z" />
+            </svg>
+            Поделиться
+          </button>
+          <button
             onClick={copyToClipboard}
             className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)]"
           >
@@ -569,6 +615,16 @@ const App: React.FC = () => {
               <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
             </svg>
             Скопировать PNG
+          </button>
+          <button
+            onClick={downloadImage}
+            className="py-4 rounded-2xl font-bold transition-transform active:scale-95 flex items-center justify-center gap-2 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-gray-200 dark:border-gray-700"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3 14a1 1 0 011-1h3v2H5v2h10v-2h-2v-2h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z" />
+              <path d="M7 10a1 1 0 011.707-.707L9 9.586V3h2v6.586l.293-.293A1 1 0 0112.707 10l-2 2a1 1 0 01-1.414 0l-2-2A1 1 0 017 10z" />
+            </svg>
+            Скачать PNG
           </button>
         </div>
 
