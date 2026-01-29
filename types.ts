@@ -4,6 +4,8 @@ export interface Font {
   name: string;
   family: string;
   source: 'google' | 'custom' | 'system';
+  subsets?: string[];
+  category?: string;
   url?: string;
 }
 

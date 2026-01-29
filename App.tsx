@@ -31,6 +31,7 @@ const App: React.FC = () => {
   const [fontSize, setFontSize] = useState(60);
   const [textColor, setTextColor] = useState('#FFFFFF');
   const [selectedFontId, setSelectedFontId] = useState('montserrat');
+  const [onlyCyrillic, setOnlyCyrillic] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [customFonts, setCustomFonts] = useState<Font[]>([]);
   const [googleFonts, setGoogleFonts] = useState<Font[]>([]);
@@ -77,6 +78,9 @@ const App: React.FC = () => {
           name: gf.family,
           family: gf.family,
           source: 'google' as const
+          ,
+          subsets: gf.subsets,
+          category: gf.category
         }));
         setGoogleFonts(convertedFonts);
         // Предзагружаем первые 10 шрифтов
@@ -259,7 +263,15 @@ const App: React.FC = () => {
       ? allFonts.filter(f => favorites.includes(f.id))
       : [];
 
-  const displayedFonts = activeTab === 'upload' ? filteredFonts : filteredFonts.slice(0, visibleFontsCount);
+  const cyrillicFilteredFonts = activeTab === 'upload' || !onlyCyrillic
+    ? filteredFonts
+    : filteredFonts.filter(f => {
+        if (f.source !== 'google') return true;
+        const subsets = f.subsets || [];
+        return subsets.includes('cyrillic') || subsets.includes('cyrillic-ext');
+      });
+
+  const displayedFonts = activeTab === 'upload' ? cyrillicFilteredFonts : cyrillicFilteredFonts.slice(0, visibleFontsCount);
 
   useEffect(() => {
     if (activeTab === 'upload') return;
@@ -277,9 +289,9 @@ const App: React.FC = () => {
     const thresholdPx = 250;
     const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - thresholdPx;
     if (isNearBottom) {
-      setVisibleFontsCount(prev => Math.min(prev + 80, filteredFonts.length));
+      setVisibleFontsCount(prev => Math.min(prev + 80, cyrillicFilteredFonts.length));
     }
-  }, [activeTab, filteredFonts.length]);
+  }, [activeTab, cyrillicFilteredFonts.length]);
 
   return (
     <div className="flex flex-col min-h-screen max-w-md mx-auto">
@@ -366,6 +378,16 @@ const App: React.FC = () => {
             Скопировать PNG
           </button>
         </div>
+
+        <label className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[var(--tg-theme-secondary-bg-color)]">
+          <span className="text-sm text-[var(--tg-theme-text-color)]">Только кириллица</span>
+          <input
+            type="checkbox"
+            checked={onlyCyrillic}
+            onChange={(e) => setOnlyCyrillic(e.target.checked)}
+            className="h-5 w-5 accent-[var(--tg-theme-button-color)]"
+          />
+        </label>
       </div>
 
       {/* Tabs */}
@@ -392,7 +414,7 @@ const App: React.FC = () => {
         ) : (
           <div>
             <div className="text-[11px] text-gray-400 mb-3 text-center">
-              Показано {Math.min(displayedFonts.length, filteredFonts.length)} из {filteredFonts.length}
+              Показано {Math.min(displayedFonts.length, cyrillicFilteredFonts.length)} из {cyrillicFilteredFonts.length}
             </div>
             <div className="grid grid-cols-2 gap-3">
               {displayedFonts.map(font => (
