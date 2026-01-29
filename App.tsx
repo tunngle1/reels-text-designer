@@ -124,29 +124,60 @@ const App: React.FC = () => {
     return loadingFontFamiliesRef.current.has(font.family);
   };
 
-  // Фоновая подгрузка шрифтов для видимых карточек (чтобы сразу было видно как выглядит)
+  // Фоновая подгрузка шрифтов
+  // В Telegram WebView фоновая прогрузка большого количества шрифтов часто работает очень медленно,
+  // поэтому там грузим только первые видимые.
   useEffect(() => {
     let cancelled = false;
+
+    const tgMode = isTelegramWebView();
 
     const candidates = currentList
       .filter((f) => f.source === 'myskotom' && !!f.tproductUrl);
 
-    const concurrency = 3;
-    let idx = 0;
-
-    const worker = async () => {
-      while (!cancelled) {
-        const font = candidates[idx++];
-        if (!font) return;
-        try {
-          await ensureFontLoaded(font);
-        } catch {
-          // ignore
-        }
-      }
-    };
+    const concurrency = tgMode ? 2 : 3;
 
     const run = async () => {
+      // Telegram: грузим батчами по 8 последовательно
+      if (tgMode) {
+        const batchSize = 8;
+        for (let start = 0; start < candidates.length && !cancelled; start += batchSize) {
+          const batch = candidates.slice(start, start + batchSize);
+          let idx = 0;
+
+          const worker = async () => {
+            while (!cancelled) {
+              const font = batch[idx++];
+              if (!font) return;
+              try {
+                await ensureFontLoaded(font);
+              } catch {
+                // ignore
+              }
+              await new Promise((r) => setTimeout(r, 120));
+            }
+          };
+
+          const workers = Array.from({ length: concurrency }, () => worker());
+          await Promise.all(workers);
+        }
+        return;
+      }
+
+      // Browser: просто очередь по всем
+      let idx = 0;
+      const worker = async () => {
+        while (!cancelled) {
+          const font = candidates[idx++];
+          if (!font) return;
+          try {
+            await ensureFontLoaded(font);
+          } catch {
+            // ignore
+          }
+        }
+      };
+
       const workers = Array.from({ length: concurrency }, () => worker());
       await Promise.all(workers);
     };
@@ -156,7 +187,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [displayed.map((f) => f.id).join(','), fontsReady]);
+  }, [currentList.map((f) => f.id).join(','), fontsReady]);
 
   const showMsg = (message: string) => {
     const tg = (window as any).Telegram;
