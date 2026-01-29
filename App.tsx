@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [visibleCount, setVisibleCount] = useState(40);
   const [fontsReady, setFontsReady] = useState(0);
   const loadedFontFamiliesRef = useRef<Set<string>>(new Set());
+  const loadingFontFamiliesRef = useRef<Set<string>>(new Set());
 
   // Загрузка шрифтов
   useEffect(() => {
@@ -78,23 +79,74 @@ const App: React.FC = () => {
     if (font.source !== 'myskotom') return;
     if (!font.tproductUrl) return;
     if (loadedFontFamiliesRef.current.has(font.family)) return;
+    if (loadingFontFamiliesRef.current.has(font.family)) return;
 
-    const res = await fetch(`/api/font?tproduct=${encodeURIComponent(font.tproductUrl)}`);
-    if (!res.ok) throw new Error(`Failed to download font: ${res.status}`);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    loadingFontFamiliesRef.current.add(font.family);
 
     try {
-      const face = new FontFace(font.family, `url(${url})`);
-      await face.load();
-      (document as any).fonts.add(face);
-      loadedFontFamiliesRef.current.add(font.family);
-      setFontsReady((n) => n + 1);
+      const res = await fetch(`/api/font?tproduct=${encodeURIComponent(font.tproductUrl)}`);
+      if (!res.ok) throw new Error(`Failed to download font: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      try {
+        const face = new FontFace(font.family, `url(${url})`);
+        await face.load();
+        (document as any).fonts.add(face);
+        loadedFontFamiliesRef.current.add(font.family);
+        setFontsReady((n) => n + 1);
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
     } finally {
-      // keep object URL alive briefly; FontFace should have loaded the data
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      loadingFontFamiliesRef.current.delete(font.family);
     }
   };
+
+  const isFontLoaded = (font: Font) => {
+    if (font.source !== 'myskotom') return true;
+    return loadedFontFamiliesRef.current.has(font.family);
+  };
+
+  const isFontLoading = (font: Font) => {
+    if (font.source !== 'myskotom') return false;
+    return loadingFontFamiliesRef.current.has(font.family);
+  };
+
+  // Фоновая подгрузка шрифтов для видимых карточек (чтобы сразу было видно как выглядит)
+  useEffect(() => {
+    let cancelled = false;
+
+    const candidates = displayed
+      .filter((f) => f.source === 'myskotom' && !!f.tproductUrl)
+      .slice(0, 8);
+
+    const concurrency = 3;
+    let idx = 0;
+
+    const worker = async () => {
+      while (!cancelled) {
+        const font = candidates[idx++];
+        if (!font) return;
+        try {
+          await ensureFontLoaded(font);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const run = async () => {
+      const workers = Array.from({ length: concurrency }, () => worker());
+      await Promise.all(workers);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayed.map((f) => f.id).join(','), fontsReady]);
 
   const showMsg = (message: string) => {
     const tg = (window as any).Telegram;
@@ -382,11 +434,15 @@ const App: React.FC = () => {
                     </button>
                   </div>
                   <div
-                    className="text-white text-xl min-h-[50px]"
+                    className={`text-white text-xl min-h-[50px] ${isFontLoaded(font) ? '' : 'opacity-60'}`}
                     style={{ fontFamily: `"${font.family}", sans-serif` }}
                   >
                     {text || font.name}
                   </div>
+
+                  {isFontLoading(font) && (
+                    <div className="mt-2 text-[10px] text-gray-500">Загрузка…</div>
+                  )}
                 </div>
               ))}
             </div>
