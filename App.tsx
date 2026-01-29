@@ -5,6 +5,10 @@ import { INITIAL_FONTS, STORAGE_KEYS } from './constants';
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('calligraphy');
   const [text, setText] = useState('Привет');
+  const [fontSize, setFontSize] = useState(48);
+  const [lineHeight, setLineHeight] = useState(1.2);
+  const [letterSpacing, setLetterSpacing] = useState(0);
+  const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('center');
   const [selectedFontId, setSelectedFontId] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [myskotomFonts, setMyskotomFonts] = useState<Font[]>([]);
@@ -189,6 +193,33 @@ const App: React.FC = () => {
     return null;
   };
 
+  const drawTextWithLetterSpacing = (ctx: CanvasRenderingContext2D, line: string, x: number, y: number, spacingPx: number) => {
+    if (!line) return;
+    if (!spacingPx) {
+      ctx.fillText(line, x, y);
+      return;
+    }
+
+    const align = ctx.textAlign;
+    ctx.textAlign = 'left';
+
+    const chars = Array.from(line);
+    const widths = chars.map((ch) => ctx.measureText(ch).width);
+    const total = widths.reduce((a, b) => a + b, 0) + spacingPx * (chars.length - 1);
+
+    let startX = x;
+    if (align === 'center') startX = x - total / 2;
+    else if (align === 'right') startX = x - total;
+
+    let cur = startX;
+    for (let i = 0; i < chars.length; i++) {
+      ctx.fillText(chars[i], cur, y);
+      cur += widths[i] + spacingPx;
+    }
+
+    ctx.textAlign = align;
+  };
+
   const buildStickerPng = async (): Promise<{ blob: Blob; file: File }> => {
     if (!selectedFont) throw new Error('No font selected');
 
@@ -199,28 +230,38 @@ const App: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas unsupported');
 
-    const fontSize = 72;
     const padding = 30;
+    const lineHeightPx = Math.max(1, fontSize * lineHeight);
 
     ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
+    ctx.textAlign = textAlign;
     const lines = text.split('\n');
     let maxW = 0;
+
     for (const line of lines) {
-      const w = ctx.measureText(line).width;
+      if (!letterSpacing) {
+        const w = ctx.measureText(line).width;
+        if (w > maxW) maxW = w;
+        continue;
+      }
+      const chars = Array.from(line);
+      const w = chars.reduce((acc, ch) => acc + ctx.measureText(ch).width, 0) + Math.max(0, chars.length - 1) * letterSpacing;
       if (w > maxW) maxW = w;
     }
 
     canvas.width = Math.max(200, Math.ceil(maxW + padding * 2));
-    canvas.height = Math.max(120, Math.ceil(lines.length * fontSize * 1.3 + padding * 2));
+    canvas.height = Math.max(120, Math.ceil(lines.length * lineHeightPx + padding * 2));
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.font = `600 ${fontSize}px "${selectedFont.family}", sans-serif`;
     ctx.fillStyle = '#FFFFFF';
-    ctx.textAlign = 'center';
+    ctx.textAlign = textAlign;
     ctx.textBaseline = 'top';
 
+    const anchorX = textAlign === 'left' ? padding : textAlign === 'right' ? (canvas.width - padding) : (canvas.width / 2);
+
     for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], canvas.width / 2, padding + i * fontSize * 1.3);
+      drawTextWithLetterSpacing(ctx, lines[i], anchorX, padding + i * lineHeightPx, letterSpacing);
     }
 
     const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
@@ -322,13 +363,69 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-black text-white flex flex-col">
       {/* Поле ввода */}
       <div className="p-4">
-        <input
-          type="text"
+        <textarea
           value={text}
           onChange={e => setText(e.target.value)}
           placeholder="Введите текст..."
-          className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white text-xl"
+          rows={2}
+          className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white text-xl resize-none"
         />
+      </div>
+
+      {/* Настройки */}
+      <div className="px-4 pb-2">
+        <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-gray-300">
+              Размер: {fontSize}px
+              <input
+                type="range"
+                min={24}
+                max={96}
+                step={1}
+                value={fontSize}
+                onChange={(e) => setFontSize(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Межстрочный: {lineHeight.toFixed(2)}
+              <input
+                type="range"
+                min={0.9}
+                max={2.0}
+                step={0.05}
+                value={lineHeight}
+                onChange={(e) => setLineHeight(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Межбуквенный: {letterSpacing}px
+              <input
+                type="range"
+                min={0}
+                max={10}
+                step={1}
+                value={letterSpacing}
+                onChange={(e) => setLetterSpacing(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+            <label className="text-xs text-gray-300">
+              Выравнивание
+              <select
+                value={textAlign}
+                onChange={(e) => setTextAlign(e.target.value as any)}
+                className="w-full mt-1 p-2 rounded-xl bg-black/30 border border-white/10 text-white"
+              >
+                <option value="left">Слева</option>
+                <option value="center">По центру</option>
+                <option value="right">Справа</option>
+              </select>
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* Превью */}
@@ -339,8 +436,12 @@ const App: React.FC = () => {
             className="text-white text-center break-words"
             style={{
               fontFamily: selectedFont ? `"${selectedFont.family}", sans-serif` : 'sans-serif',
-              fontSize: 48,
+              fontSize,
               fontWeight: 600,
+              lineHeight,
+              letterSpacing: `${letterSpacing}px`,
+              textAlign,
+              whiteSpace: 'pre-wrap',
             }}
           >
             {text || 'Выбери шрифт'}
