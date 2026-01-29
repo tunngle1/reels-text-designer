@@ -124,6 +124,11 @@ const FontCard: React.FC<{
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('calligraphy');
   const [text, setText] = useState('владик пуся');
+  const [fontSize, setFontSize] = useState(72);
+  const [fontWeight, setFontWeight] = useState(600);
+  const [letterSpacing, setLetterSpacing] = useState(0);
+  const [lineHeight, setLineHeight] = useState(1.2);
+  const [textColor, setTextColor] = useState('#FFFFFF');
   const [selectedFontId, setSelectedFontId] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [googleFonts, setGoogleFonts] = useState<Font[]>([]);
@@ -235,89 +240,91 @@ const App: React.FC = () => {
     try {
       // Убеждаемся, что шрифт загружен
       await loadGoogleFont(fontFamily);
-      // Небольшая задержка для загрузки шрифта
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Небольшая задержка для применения font-face
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Canvas not supported');
 
-      const fontSize = 72;
-      const fontWeight = 600;
       const padding = 40;
       const fontDecl = `${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
-      
-      ctx.font = fontDecl;
-      
+
       const lines = text.split('\n');
-      const lineHeight = fontSize * 1.4;
-      let maxWidth = 0;
-      lines.forEach(line => {
-        const m = ctx.measureText(line);
-        if (m.width > maxWidth) maxWidth = m.width;
-      });
+      const linePx = fontSize * lineHeight;
 
-      canvas.width = Math.max(maxWidth + padding * 2, 200);
-      canvas.height = Math.max(lines.length * lineHeight + padding * 2, 120);
+      const measureLine = (line: string) => {
+        if (!letterSpacing) return ctx.measureText(line).width;
+        const chars = Array.from(line);
+        if (chars.length <= 1) return ctx.measureText(line).width;
+        let w = 0;
+        for (const ch of chars) w += ctx.measureText(ch).width;
+        w += (chars.length - 1) * letterSpacing;
+        return w;
+      };
 
-      // Прозрачный фон
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Рисуем текст
       ctx.font = fontDecl;
-      ctx.fillStyle = '#FFFFFF';
-      ctx.textAlign = 'center';
+      let maxWidth = 0;
+      for (const line of lines) {
+        maxWidth = Math.max(maxWidth, measureLine(line));
+      }
+
+      canvas.width = Math.max(Math.ceil(maxWidth + padding * 2), 200);
+      canvas.height = Math.max(Math.ceil(lines.length * linePx + padding * 2), 120);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = fontDecl;
+      ctx.fillStyle = textColor;
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
 
-      lines.forEach((line, i) => {
-        ctx.fillText(line, canvas.width / 2, padding + i * lineHeight);
-      });
+      const drawLineCentered = (line: string, y: number) => {
+        const width = measureLine(line);
+        let x = (canvas.width - width) / 2;
+        if (!letterSpacing) {
+          ctx.fillText(line, x, y);
+          return;
+        }
+        const chars = Array.from(line);
+        for (let i = 0; i < chars.length; i++) {
+          const ch = chars[i];
+          ctx.fillText(ch, x, y);
+          x += ctx.measureText(ch).width + letterSpacing;
+        }
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        drawLineCentered(lines[i], padding + i * linePx);
+      }
 
       // Конвертируем в blob
       const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('Failed to create blob');
 
-      const file = new File([blob], `sticker-${Date.now()}.png`, { type: 'image/png' });
+      // Только копирование в буфер (как стикер)
+      const canCopy = (window as any).isSecureContext &&
+        navigator.clipboard &&
+        typeof (navigator.clipboard as any).write === 'function' &&
+        typeof (window as any).ClipboardItem === 'function';
 
-      // 1. Пробуем Clipboard API (работает только на HTTPS)
-      const canCopy = (window as any).isSecureContext && 
-                      navigator.clipboard && 
-                      typeof (navigator.clipboard as any).write === 'function' &&
-                      typeof (window as any).ClipboardItem === 'function';
-      
-      if (canCopy) {
-        try {
-          await (navigator.clipboard as any).write([
-            new (window as any).ClipboardItem({ 'image/png': blob })
-          ]);
-          showSuccess('Стикер скопирован! Вставьте в Instagram Reels.');
-          return;
-        } catch (e) {
-          console.log('Clipboard API failed:', e);
-        }
+      if (!canCopy) {
+        throw new Error('ClipboardImageNotSupported');
       }
 
-      // 2. Fallback: Share API (мобильные устройства)
-      try {
-        const navAny = navigator as any;
-        if (typeof navAny.share === 'function' && navAny.canShare?.({ files: [file] })) {
-          await navAny.share({ files: [file], title: 'Стикер для Instagram' });
-          return;
-        }
-      } catch (e) {
-        console.log('Share API failed:', e);
-      }
+      await (navigator.clipboard as any).write([
+        new (window as any).ClipboardItem({ 'image/png': blob })
+      ]);
 
-      // 3. Fallback: скачать файл
-      const link = document.createElement('a');
-      link.download = file.name;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-      showSuccess('Стикер скачан! Откройте его в галерее и поделитесь в Instagram.');
+      showSuccess('Стикер скопирован! Открой Instagram и вставь.');
 
     } catch (err) {
       console.error('Copy as sticker failed:', err);
-      alert('Не удалось создать стикер. Попробуйте ещё раз.');
+      const msg = String((err as any)?.message || '');
+      if (msg.includes('ClipboardImageNotSupported')) {
+        alert('Этот браузер не позволяет копировать PNG в буфер обмена. Открой приложение в Chrome/Safari по HTTPS (или внутри Telegram, если там доступно), иначе Instagram не вставит шрифт как стикер.');
+      } else {
+        alert('Не удалось скопировать стикер. Попробуйте ещё раз.');
+      }
     } finally {
       setIsCopying(false);
     }
@@ -343,6 +350,107 @@ const App: React.FC = () => {
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-black text-white">
       {/* Header */}
       <Header text={text} onTextChange={setText} />
+
+      {/* Preview */}
+      <div className="px-4">
+        <div className="rounded-3xl bg-white/5 border border-white/10 p-5 mb-4">
+          <div
+            className="text-white break-words whitespace-pre-wrap"
+            style={{
+              fontFamily: selectedFont?.family || 'sans-serif',
+              fontSize,
+              fontWeight,
+              letterSpacing,
+              lineHeight,
+              color: textColor,
+            }}
+          >
+            {text || ' '}
+          </div>
+        </div>
+
+        {/* Typography controls */}
+        <div className="rounded-3xl bg-white/5 border border-white/10 p-4 mb-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Размер: {fontSize}px</label>
+              <input
+                type="range"
+                min="20"
+                max="160"
+                value={fontSize}
+                onChange={(e) => setFontSize(parseInt(e.target.value, 10))}
+                className="w-full accent-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Жирность: {fontWeight}</label>
+              <input
+                type="range"
+                min="100"
+                max="900"
+                step="100"
+                value={fontWeight}
+                onChange={(e) => setFontWeight(parseInt(e.target.value, 10))}
+                className="w-full accent-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Межбуквенно: {letterSpacing}px</label>
+              <input
+                type="range"
+                min="-2"
+                max="20"
+                step="1"
+                value={letterSpacing}
+                onChange={(e) => setLetterSpacing(parseInt(e.target.value, 10))}
+                className="w-full accent-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Межстрочно: {lineHeight.toFixed(1)}</label>
+              <input
+                type="range"
+                min="0.8"
+                max="2.2"
+                step="0.1"
+                value={lineHeight}
+                onChange={(e) => setLineHeight(parseFloat(e.target.value))}
+                className="w-full accent-purple-500"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-xs font-bold uppercase text-gray-400 mb-1">Цвет</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={textColor}
+                onChange={(e) => setTextColor(e.target.value)}
+                className="w-12 h-10 p-0 border-0 rounded-lg bg-transparent"
+              />
+              <div className="text-sm text-gray-300">{textColor}</div>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <button
+              disabled={!selectedFont || isCopying}
+              onClick={() => selectedFont && copyAsSticker(selectedFont.family)}
+              className={`w-full py-4 rounded-2xl font-bold text-lg transition-all ${
+                !selectedFont
+                  ? 'bg-gray-700 text-gray-400'
+                  : isCopying
+                    ? 'bg-gray-600 cursor-wait'
+                    : 'bg-gradient-to-r from-purple-600 to-pink-600'
+              }`}
+            >
+              {isCopying ? 'Создаю стикер…' : 'Скопировать как стикер'}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Заголовок раздела */}
       <div className="px-4 py-3 flex items-center justify-between">
